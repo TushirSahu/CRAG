@@ -5,9 +5,9 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from cache import LocalSemanticCache  # Your custom cache implementation
+from src.agent.semantic_cache import LocalSemanticCache  # Your custom cache implementation
 import shutil
-from crag_agent import app as crag_app, vector_db  # Imports your compiled LangGraph and db
+from src.agent.graph import app as crag_app, vector_db  # Imports your compiled LangGraph and db
 
 # --- 1. Page Setup ---
 st.set_page_config(page_title="CRAG Agent Demo", page_icon="🤖", layout="wide")
@@ -49,16 +49,16 @@ with st.sidebar:
     
     if st.button("Clear Semantic Cache"):
         # This deletes the cache folder from your hard drive
-        if os.path.exists("./cache_db"):
-            shutil.rmtree("./cache_db")
+        if os.path.exists("./data/cache_db"):
+            shutil.rmtree("./data/cache_db")
             st.session_state.semantic_cache = LocalSemanticCache() # Re-initialize
             st.success("Cache successfully wiped!")
         else:
             st.info("Cache is already empty.")
             
     if st.button("Clear Vector DB (Forget PDFs)"):
-        if os.path.exists("./chroma_db"):
-            shutil.rmtree("./chroma_db")
+        if os.path.exists("./data/chroma_db"):
+            shutil.rmtree("./data/chroma_db")
             st.success("Vector DB wiped! The agent has forgotten all PDFs.")
         else:
             st.info("Vector DB is already empty.")

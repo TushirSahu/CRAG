@@ -25,7 +25,7 @@ class GraphState(TypedDict):
 
 llm = ChatGoogleGenerativeAI(model="gemma-3-1b-it", temperature=0)
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-vector_db = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+vector_db = Chroma(persist_directory="./data/chroma_db", embedding_function=embeddings)
 retriever = vector_db.as_retriever(search_kwargs={"k": 3})
 
 

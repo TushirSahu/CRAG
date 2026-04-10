@@ -39,6 +39,29 @@ graph TD
     D --> H[Final Evaluated Response + Sources]
 ```
 
+```
+CRAG/
+├── src/                    # Source code
+│   ├── agent/              # LangGraph Agent Logic
+│   │   ├── __init__.py
+│   │   ├── graph.py        # Core orchestration & LLM nodes
+│   │   └── semantic_cache.py # Semantic caching logic
+│   └── utils/              # Utility scripts
+│       ├── __init__.py
+│       ├── ingest.py
+│       ├── test_model.py
+│       └── list_models.py
+├── data/                   # Local databases
+│   ├── chroma_db/          # Persistent Vector Store
+│   └── cache_db/           # Persistent Cache Store
+├── docs/                   # Documentation
+├── tests/                  # Unit and integration tests
+├── app.py                  # Streamlit Frontend application
+├── Dockerfile              # Containerization
+├── requirements.txt        # Dependencies
+└── .env                    # Environment variables (Google API, Tavily, LangSmith)
+```
+
 ## 🛠 Tech Stack
 
 - **Orchestration:** LangGraph, LangChain

@@ -4,7 +4,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 class LocalSemanticCache():
     def __init__(self, threshold: float = 0.7):
         self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        self.cache_db = Chroma(collection_name="semantic_cache",persist_directory="./cache_db", embedding_function=self.embeddings)
+        self.cache_db = Chroma(collection_name="semantic_cache",persist_directory="./data/cache_db", embedding_function=self.embeddings)
         self.threshold = threshold
 
     def check_cache(self, query: str):
