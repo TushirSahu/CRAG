@@ -1,7 +1,14 @@
-./cache_db
-./cache_db/*
-./chroma_db
-./chroma_db/*
-./__pycache__*
-.DS_Store
+# Environments
 .env
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases (Updated to new structure)
+data/cache_db/
+data/chroma_db/
+
+# OS generated files
+.DS_Store
