@@ -2,4 +2,3 @@
 ./cache_db/*
 ./chroma_db
 ./chroma_db/*
-*.pdf
