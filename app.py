@@ -33,6 +33,10 @@ with st.sidebar:
                 loader = PyPDFLoader(tmp_file_path)
                 docs = loader.load()
                 
+                # OVERRIDE the temporary file path with the actual filename uploaded
+                for doc in docs:
+                    doc.metadata["source"] = uploaded_file.name
+                
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
                 chunks = text_splitter.split_documents(docs)
                 

@@ -24,7 +24,16 @@ class GraphState(TypedDict):
 
 
 llm = ChatGoogleGenerativeAI(model="gemma-3-1b-it", temperature=0)
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+# Check if we have fine-tuned embeddings available
+finetuned_model_path = "./data/finetuned-domain-embeddings"
+if os.path.exists(finetuned_model_path):
+    print("🧠 Loading fine-tuned domain embeddings...")
+    embeddings = HuggingFaceEmbeddings(model_name=finetuned_model_path)
+else:
+    print("⚠️ Fine-tuned embeddings not found. Falling back to base HuggingFace model...")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
 vector_db = Chroma(persist_directory="./data/chroma_db", embedding_function=embeddings)
 retriever = vector_db.as_retriever(search_kwargs={"k": 3})
 
@@ -131,7 +140,8 @@ def generate(state: GraphState):
         "Provide a highly detailed, comprehensive, and in-depth response. "
         "Synthesize all available information to give a thorough explanation. "
         "ALWAYS cite your sources inline using [Source 1], [Source 2], etc. "
-        "At the very end of your answer, include a '### References' section that lists all the sources you referenced.\n\n"
+        "At the very end of your answer, include a '### References' section that lists all the sources you referenced. "
+        "When listing the references, simply write the name of the source EXACTLY as it is provided in the context blocks below (e.g., '[Source 1] - MyPDF.pdf (Page 6)'). Do NOT attempt to create hyperlinks, and do NOT add apologetic filler text like 'Since I cannot access external URLs'.\n\n"
         "{history_text}\n"
         "Context:\n"
         "{context}\n\n"
@@ -197,6 +207,52 @@ def decider_after_web_search(state: GraphState):
     print("Checking if web search results are sufficient...")
     return "rewrite_query"
 
+def grade_generation_v_documents_and_question(state: GraphState):
+    print("---CHECK HALLUCINATIONS---")
+    question = state["question"]
+    documents = state["documents"]
+    generation = state["generation"]
+
+    class GradeHallucinations(BaseModel):
+        binary_score: str = Field(description="Answer 'yes' if the generation is supported by the documents, 'no' otherwise.")
+
+    parser = JsonOutputParser(pydantic_object=GradeHallucinations)
+    
+    prompt = ChatPromptTemplate.from_template(
+        "You are a grader assessing whether an LLM generation is grounded in / supported by a set of retrieved facts. \n"
+        "Here are the facts:\n"
+        "-------\n"
+        "{documents}\n"
+        "-------\n"
+        "Here is the LLM generation:\n"
+        "{generation}\n"
+        "-------\n"
+        "Give a binary score 'yes' or 'no' indicating whether the answer is grounded in / supported by the facts.\n"
+        "{format_instructions}"
+    )
+
+    hallucination_grader = prompt | llm | parser
+    docs_str = "\n\n".join([doc["content"] for doc in documents])
+    
+    try:
+        score = hallucination_grader.invoke({
+            "documents": docs_str, 
+            "generation": generation,
+            "format_instructions": parser.get_format_instructions()
+        })
+        grade = score["binary_score"]
+    except Exception as e:
+        grade = "yes"  # Fallback gracefully
+        
+    if grade.lower() == "yes":
+        print("---DECISION: GENERATION IS GROUNDED IN DOCUMENTS---")
+        return "useful"
+    else:
+        print("---DECISION: GENERATION IS HALLUCINATED... REWRITING QUERY---")
+        if state.get("retry_count", 0) >= 2:
+             print("Max retries reached. Accepting generation as best attempt.")
+             return "useful"
+        return "not useful"
 
 
 # 1. Initialize the graph with our state
@@ -233,7 +289,16 @@ workflow.add_conditional_edges(
 
 # Connect the remaining straight lines
 workflow.add_edge("rewrite_query", "web_search")
-workflow.add_edge("generate", END)
+
+# After generation, check for hallucinations
+workflow.add_conditional_edges(
+    "generate",
+    grade_generation_v_documents_and_question,
+    {
+        "useful": END,
+        "not useful": "rewrite_query",
+    }
+)
 
 # 4. Compile!
 app = workflow.compile()

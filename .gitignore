@@ -9,6 +9,10 @@ __pycache__/
 # Databases (Updated to new structure)
 data/cache_db/
 data/chroma_db/
+data/finetuned-domain-embeddings/
+
+# Data files and evaluation results
+*.csv
 
 # OS generated files
 .DS_Store
