@@ -12,13 +12,15 @@ Unlike standard RAG pipelines that blindly rely on retrieved context—even when
 
 ## ✨ Key Features
 
-- **Agentic Orchestration (LangGraph):** State-machine driven workflow that enforces robust logic (Retrieve ➡️ Grade ➡️ Generate / Web Fallback).
-- **Self-Correction & Mitigation:** Uses an LLM Grader to score document relevance, minimizing hallucination outputs.
-- **Dynamic Query Rewriting:** If web search fails initially, the agent autonomously rewrites the search query to yield better results.
-- **Semantic Caching:** Zero-latency responses for repeated semantic queries, severely reducing API costs.
-- **Robust Memory:** Maintains conversational history for multi-turn Q&A context.
-- **Verifiable Output:** LLM generations provide **explicit inline citations** linked directly to source documents and page numbers.
-- **Observable & Deployable:** Easily monitored with **LangSmith Tracing** and fully containerized with **Docker** for cloud deployment.
+- **Advanced Agentic Orchestration (LangGraph):** State-machine driven workflow enforcing robust control logic (Retrieve ➡️ Grade Docs ➡️ Generate ➡️ Grade Answer ➡️ Web Fallback/End).
+- **Zero-Hallucination Guardrails (Self-RAG):** Evaluates generated answers against retrieved documents. Ungrounded (hallucinated) answers are instantly rejected, triggering an autonomous query rewrite and web search.
+- **Document Relevance Grading:** Uses an LLM Grader to score retrieval document relevance, filtering out noisy context before generation.
+- **Embedding Fine-Tuning (Domain Adaptation):** Pipeline to generate synthetic QA datasets and fine-tune `HuggingFaceEmbeddings` via Contrastive Learning (Multiple Negatives Ranking Loss) for high domain precision.
+- **Ragas Evaluation Suite:** Automated testing scripts measuring *Faithfulness, Answer Relevancy, Context Precision,* and *Context Recall*.
+- **Dynamic Query Rewriting:** If web search or local context fails, the agent rewrites its own search queries to extract better results.
+- **Semantic Caching:** Zero-latency retrieval for previously asked semantic queries, severely slashing API costs.
+- **Verifiable Output:** Generations provide **clean inline citations**, explicitly referencing source PDF filenames and page numbers.
+- **Observable & Deployable:** Monitored with **LangSmith Tracing** and fully containerized with **Docker**.
 
 ## 🧠 System Architecture
 
@@ -28,34 +30,37 @@ graph TD
     B --> C{LLM Grader: Are Docs Relevant?}
     
     C -- Yes --> D((Generate LLM Answer))
-    
     C -- No / Partial --> E(Web Search via Tavily)
-    E --> F{Check Search Results}
     
+    E --> F{Check Search Results}
     F -- Sufficient --> D
     F -- Insufficient --> G(Rewrite Query)
     G --> E
     
-    D --> H[Final Evaluated Response + Sources]
+    D --> I{Hallucination Grader: Is Answer Grounded?}
+    I -- Yes --> H[Final Evaluated Response + Sources]
+    I -- No --> G
 ```
 
-```
+```text
 CRAG/
 ├── src/                    # Source code
 │   ├── agent/              # LangGraph Agent Logic
 │   │   ├── __init__.py
-│   │   ├── graph.py        # Core orchestration & LLM nodes
+│   │   ├── graph.py        # Core orchestration (CRAG + Self-RAG)
 │   │   └── semantic_cache.py # Semantic caching logic
-│   └── utils/              # Utility scripts
+│   └── utils/              # Utility & ML scripts
 │       ├── __init__.py
-│       ├── ingest.py
-│       ├── test_model.py
-│       └── list_models.py
-├── data/                   # Local databases
+│       ├── finetune_embeddings.py # Contrastive Learning domain adaptation
+│       ├── generate_synthetic_data.py # Synthetic QA dataset generation
+│       └── ingest.py
+├── data/                   # Local databases (git-ignored)
 │   ├── chroma_db/          # Persistent Vector Store
-│   └── cache_db/           # Persistent Cache Store
-├── docs/                   # Documentation
-├── tests/                  # Unit and integration tests
+│   ├── cache_db/           # Persistent Cache Store
+│   └── finetuned-domain-embeddings/ # Custom local embedding model
+├── tests/                  # Evaluation and testing
+│   ├── __init__.py
+│   └── evaluate_rag.py     # Ragas evaluation pipeline
 ├── app.py                  # Streamlit Frontend application
 ├── Dockerfile              # Containerization
 ├── requirements.txt        # Dependencies
@@ -114,6 +119,7 @@ docker run -p 8501:8501 --env-file .env crag-agent
 
 ## 🔜 Future Roadmap
 
-- Integrate **LangGraph Checkpointers** for robust, cross-session thread memory.
-- Implement **Ragas** (Retrieval Augmented Generation Assessment) offline evaluation scripts.
-- Support multimodal document ingestion (images, charts).
+- Integrate **LangGraph Checkpointers** for robust, cross-session thread database persistence.
+- Implement **Token Streaming** to the frontend UI to eliminate perceived generation latency.
+- Displace API dependencies by fine-tuning a **Small Language Model (e.g. LLaMA-3 8B via LoRA)** to locally execute binary document/hallucination grading.
+- Support multimodal document ingestion (images, charts, tables).
