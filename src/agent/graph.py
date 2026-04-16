@@ -23,7 +23,7 @@ class GraphState(TypedDict):
     retry_count: int
 
 
-llm = ChatGoogleGenerativeAI(model="gemma-3-1b-it", temperature=0)
+llm = ChatGoogleGenerativeAI(model="gemma-3-4b-it", temperature=0)
 
 # Check if we have fine-tuned embeddings available
 finetuned_model_path = "./data/finetuned-domain-embeddings"
