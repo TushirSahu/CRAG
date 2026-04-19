@@ -21,6 +21,11 @@ Unlike standard RAG pipelines that blindly rely on retrieved context—even when
 - **Semantic Caching:** Zero-latency retrieval for previously asked semantic queries, severely slashing API costs.
 - **Verifiable Output:** Generations provide **clean inline citations**, explicitly referencing source PDF filenames and page numbers.
 - **Observable & Deployable:** Monitored with **LangSmith Tracing** and fully containerized with **Docker**.
+- **Advanced Unstructured Ingestion (LlamaParse):** Vision-Language processing that perfectly extracts nested data, complex tables, and images out of notoriously messy PDFs where classic PyPDF loaders fail.
+
+<img width="800" alt="LangSmith Tracing" src="assets/langsmith_trace.png">
+
+*Example of complete LLM observability: A trace of the query "who is tushir sahu" passing through the agent. Every node (retrieval, grading, generating) is captured perfectly, showing the exact source document parsed (`Tushir Sahu.pdf`), total latency (18.72s), and total token usage (1.6K tokens) logged directly to the LangChain project dashboard.*
 
 ## 🧠 System Architecture
 
@@ -123,3 +128,18 @@ docker run -p 8501:8501 --env-file .env crag-agent
 - Implement **Token Streaming** to the frontend UI to eliminate perceived generation latency.
 - Displace API dependencies by fine-tuning a **Small Language Model (e.g. LLaMA-3 8B via LoRA)** to locally execute binary document/hallucination grading.
 - Support multimodal document ingestion (images, charts, tables).
+## 🚀 Deployment (Docker)
+
+To make things easy for reviewers, you can run this entire architecture locally with zero dependency headaches using Docker.
+
+1. **Clone the repository**
+2. **Setup your environment**:
+   ```bash
+   cp .env.example .env
+   # Edit .env and paste in your Google API and Tavily Search keys
+   ```
+3. **Fire it up**:
+   ```bash
+   docker-compose up --build -d
+   ```
+4. **Open your browser**: navigate to `http://localhost:8501` to test the agent! Your cached queries and vector embeddings are mounted persistently to the container automatically.

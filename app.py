@@ -1,6 +1,10 @@
 import streamlit as st
 import os
 import tempfile
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -8,10 +12,20 @@ from langchain_chroma import Chroma
 from src.agent.semantic_cache import LocalSemanticCache  # Your custom cache implementation
 import shutil
 from src.agent.graph import app as crag_app, vector_db  # Imports your compiled LangGraph and db
+from llama_parse import LlamaParse
+from langchain_core.documents import Document
+import asyncio
 
 # --- 1. Page Setup ---
 st.set_page_config(page_title="CRAG Agent Demo", page_icon="🤖", layout="wide")
 st.title("🔍 Corrective RAG (CRAG) Agent")
+
+# Check Telemetry status
+langsmith_active = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true"
+if langsmith_active:
+    st.caption("🟢 **LangSmith Observability is Active:** Full payload traces, cost tracking, and latency metrics are being logged in production.")
+else:
+    st.caption("🔴 **Telemetry Disabled:** Add your `LANGCHAIN_API_KEY` to the `.env` to enable enterprise-grade observability and cost tracking.")
 
 # --- 2. Sidebar: Document Upload & Ingestion ---
 with st.sidebar:
@@ -29,13 +43,27 @@ with st.sidebar:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_file_path = tmp_file.name
                 
-                # Run the ingestion pipeline
-                loader = PyPDFLoader(tmp_file_path)
-                docs = loader.load()
-                
                 # OVERRIDE the temporary file path with the actual filename uploaded
-                for doc in docs:
-                    doc.metadata["source"] = uploaded_file.name
+                llama_key = os.getenv("LLAMA_CLOUD_API_KEY")
+                if llama_key:
+                    # Force standard asyncio event loop to prevent uvloop conflicts with LlamaParse's internal nest_asyncio
+                    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+                    
+                    st.info("🧠 LlamaParse Vision-Language extraction active (great for tables/images!)")
+                    parser = LlamaParse(
+                        api_key=llama_key,
+                        result_type="markdown",
+                        verbose=True
+                    )
+                    parsed_docs = parser.load_data(tmp_file_path)
+                    docs = [Document(page_content=doc.text, metadata={"source": uploaded_file.name}) for doc in parsed_docs]
+                else:
+                    st.warning("Using legacy PyPDFLoader. Add a free LLAMA_CLOUD_API_KEY to your .env to extract tables and messy PDFs perfectly into Markdown.", icon="⚠️")
+                    from langchain_community.document_loaders import PyPDFLoader
+                    loader = PyPDFLoader(tmp_file_path)
+                    docs = loader.load()
+                    for doc in docs:
+                        doc.metadata["source"] = uploaded_file.name
                 
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
                 chunks = text_splitter.split_documents(docs)

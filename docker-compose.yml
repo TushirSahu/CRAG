@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  crag-app:
+    build: .
+    container_name: crag-langgraph-agent
+    ports:
+      - "8501:8501"
+    # Ensure persistent storage for vector databases
+    volumes:
+      - ./data:/app/data
+      - ./cache_db:/app/cache_db
+    # Read the environment variables from the .env file
+    env_file:
+      - .env
+    restart: unless-stopped
