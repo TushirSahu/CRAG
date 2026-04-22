@@ -12,6 +12,7 @@ A production-ready **Corrective Retrieval-Augmented Generation (CRAG)** architec
 - **Hybrid Search (Custom RRF):** Combines BM25 exact-keyword matching with Chroma DB semantic search using Reciprocal Rank Fusion.
 - **GraphRAG Integration:** Extracts entity relationships via NetworkX during ingestion to enrich LLM context dynamically.
 - **Vision-Language Ingestion:** Uses LlamaParse to accurately extract nested data and complex financial tables from messy PDFs.
+- **Embedding Fine-Tuning:** Pipeline for domain adaptation using synthetic QA generation and Contrastive Learning (Multiple Negatives Ranking Loss) to fine-tune HuggingFace embeddings.
 - **Mathematical Evaluation:** Automated pipeline to prove system effectiveness mathematically using the **RAGAS** framework (Faithfulness, Answer Relevancy, Context Precision, Context Recall).
 - **Web Fallback:** Autonomous Tavily web search for out-of-domain questions or rejected context.
 
