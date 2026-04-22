@@ -41,8 +41,10 @@ class GemmaRagasWrapper(ChatGoogleGenerativeAI):
             if n == 1 or n is None:
                 return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
             
+            # Fix Python 3 super() scope resolution inside list comprehensions
+            agenerate_func = super()._agenerate
             tasks = [
-                super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                agenerate_func(messages, stop=stop, run_manager=run_manager, **kwargs)
                 for _ in range(n)
             ]
             results = await asyncio.gather(*tasks)
@@ -54,12 +56,12 @@ class GemmaRagasWrapper(ChatGoogleGenerativeAI):
 
 EVALUATION_DATA = [
     {
-        "question": "How does the CRAG system handle hallucinations?",
-        "ground_truth": "The CRAG system uses a self-correction mechanism with an LLM grader that evaluates both document relevance and answer groundedness. If an answer is hallucinated or ungrounded, it triggers a query rewrite and web search fallback."
+        "question": "What does the report explicitly state regarding 'ASC 842' and the classification of operating lease liabilities?",
+        "ground_truth": "Under ASC 842, operating lease liabilities are generally recognized on the balance sheet based on the present value of the remaining lease payments over the lease term."
     },
     {
-        "question": "What is the purpose of semantic caching in this architecture?",
-        "ground_truth": "Semantic caching stores previous user queries and their generated answers locally in ChromaDB. It instantly returns cached answers for semantically similar questions, reducing API costs and latency to zero."
+        "question": "According to the signatures on the Form 10-K, who serves as the Chief Financial Officer and Principal Accounting Officer?",
+        "ground_truth": "Vaibhav Taneja serves as the Chief Financial Officer and Principal Accounting Officer."
     }
 ]
 

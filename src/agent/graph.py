@@ -1,3 +1,8 @@
+
+from langchain_community.retrievers import BM25Retriever
+from langchain_core.documents import Document
+import networkx as nx
+import pickle
 from typing import List,TypedDict
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -25,7 +30,6 @@ class GraphState(TypedDict):
 
 llm = ChatGoogleGenerativeAI(model="gemma-3-4b-it", temperature=0)
 
-# Check if we have fine-tuned embeddings available
 finetuned_model_path = "./data/finetuned-domain-embeddings"
 if os.path.exists(finetuned_model_path):
     print("🧠 Loading fine-tuned domain embeddings...")
@@ -35,20 +39,77 @@ else:
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 vector_db = Chroma(persist_directory="./data/chroma_db", embedding_function=embeddings)
-retriever = vector_db.as_retriever(search_kwargs={"k": 3})
 
 
-#---NODE 1: Retrieve    
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain_core.retrievers import BaseRetriever
+
+class CustomEnsembleRetriever(BaseRetriever):
+    retrievers: list
+    weights: list
+    c: int = 60
+
+    def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> list[Document]:
+        from collections import defaultdict
+        
+        rrf_scores = defaultdict(float)
+        doc_map = {}
+        
+        for weight, retriever in zip(self.weights, self.retrievers):
+            docs = retriever.invoke(query)
+            for rank, doc in enumerate(docs):
+                clean_content = doc.page_content.strip()
+                rrf_scores[clean_content] += weight * (1.0 / (rank + 1 + self.c))
+                doc_map[clean_content] = doc
+                
+        # Sort by RRF score descending
+        sorted_docs = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
+        return [doc_map[content] for content, score in sorted_docs[:3]]
+
+
+def get_hybrid_retriever():
+    vector_retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+    try:
+        db_data = vector_db.get()
+        docs = [Document(page_content=c, metadata=m) for c, m in zip(db_data['documents'], db_data['metadatas'])]
+        if docs:
+            bm25 = BM25Retriever.from_documents(docs)
+            bm25.k = 3
+            return CustomEnsembleRetriever(retrievers=[bm25, vector_retriever], weights=[0.5, 0.5])
+    except Exception as e:
+        pass
+    return vector_retriever
+
+def extract_graph_context(question: str) -> str:
+    graph_path = "./data/graph_db.pkl"
+    if not os.path.exists(graph_path):
+        return ""
+    try:
+        with open(graph_path, 'rb') as f:
+            graph = pickle.load(f)
+        nodes = [str(n) for n in list(graph.nodes)[:15]]
+        edges = [f"{u} -> {v}" for u, v in list(graph.edges)[:15]]
+        return f"Graph Knowledge: Linked Entities: {nodes}. Relationships: {edges}"
+    except Exception:
+        return ""
+
+
+
 def retrieve(state: GraphState):
-    print("--Retrieving from vector DB--")
+    print("--Retrieving via Hybrid Search & GraphRAG--")
     question = state["question"]
-    retrieved_docs = retriever.invoke(question)
+    
+    hybrid_retriever = get_hybrid_retriever()
+    retrieved_docs = hybrid_retriever.invoke(question)
     documents = [{"content": doc.page_content, "metadata": doc.metadata} for doc in retrieved_docs]
+    
+    graph_context = extract_graph_context(question)
+    if graph_context:
+        documents.append({"content": graph_context, "metadata": {"source": "Neo4j GraphRAG (Simulated)"}})
 
     return {"documents": documents, "question": question}
 
 
-#---NODE 2: Grade Documents
 def grade_documents(state: GraphState):
     print("--Grading Documents--")
     question = state["question"]
@@ -57,7 +118,6 @@ def grade_documents(state: GraphState):
     class Grade(BaseModel):
         binary_score: str = Field(description="Relevance score 'yes' or 'no'")
     
-    # structured_llm = llm.with_structured_output(Grade)
     prompt = ChatPromptTemplate.from_template(
         "You are a grader assessing relevance of a retrieved document to a user question.\n"
         "Question: {question}\n"
@@ -72,7 +132,7 @@ def grade_documents(state: GraphState):
     for doc in documents:
         score = retrieval_grader.invoke({"question": question, "document": doc["content"]})
 
-        if score.strip().lower() == "yes":
+        if "yes" in score.strip().lower():
             filtered_docs.append(doc)
             print(f"Document graded as relevant: {doc['content'][:50]}...")
         time.sleep(3)
@@ -83,7 +143,6 @@ def grade_documents(state: GraphState):
 
     return {"documents": filtered_docs, "web_search_needed": web_search_needed, "question": question} 
 
-#---NODE 3: Web Search
 def web_search(state: GraphState):
     print("--WEB SEARCH FALLBACK--")
     question = state["question"]
@@ -91,7 +150,6 @@ def web_search(state: GraphState):
         documents = state.get("documents", [])
     else:
         documents = []
-    # documents = state["documents"]
     tool = TavilySearchResults(max_results=2)
     docs = tool.invoke({"query": question})
     
@@ -113,7 +171,6 @@ def web_search(state: GraphState):
     return {"documents": documents, "question": question}
 
 
-#---NODE 4: Generate Answer
 def generate(state: GraphState):
     print("--Generating Answer--")
     question = state["question"]
@@ -126,7 +183,6 @@ def generate(state: GraphState):
         for msg in chat_history[-4:]:  # keep last 4 messages
             history_text += f"{msg['role'].capitalize()}: {msg['content']}\n"
 
-    # Combine docs with source citations
     context_blocks = []
     for idx, doc in enumerate(documents):
         source = doc['metadata'].get('source', 'Unknown')
@@ -151,7 +207,6 @@ def generate(state: GraphState):
     generation = rag_chain.invoke({"context": context, "question": question, "history_text": history_text})
     return {"generation": generation, "question": question, "documents": documents}
 
-#---Node 5: rewriting query
 def rewrite_query(state: GraphState):
     print("---REWRITING QUERY---")
     question = state["question"]
@@ -159,10 +214,8 @@ def rewrite_query(state: GraphState):
     class RewrittenQuery(BaseModel):
         optimized_query: str = Field(description="The optimized search engine query. No conversational text.")
         
-    # 1. Create a parser instead of using with_structured_output
     parser = JsonOutputParser(pydantic_object=RewrittenQuery)
     
-    # 2. Inject format_instructions into the prompt
     prompt = ChatPromptTemplate.from_template(
         "You are an expert web search optimizer. Your ONLY job is to look at the user's "
         "initial question and rewrite it into a highly effective search engine query. \n"
@@ -170,11 +223,8 @@ def rewrite_query(state: GraphState):
         "Initial question: {question}"
     )
     
-    # 3. Chain the parser at the end
     rewriter = prompt | llm | parser 
     
-    # 4. Pass the instructions when invoking
-    # Notice: The result is now a dictionary, not a Pydantic object!
     result = rewriter.invoke({
         "question": question,
         "format_instructions": parser.get_format_instructions()
@@ -255,21 +305,17 @@ def grade_generation_v_documents_and_question(state: GraphState):
         return "not useful"
 
 
-# 1. Initialize the graph with our state
 workflow = StateGraph(GraphState)
 
-# 2. Add the nodes
 workflow.add_node("retrieve", retrieve)
 workflow.add_node("grade_documents", grade_documents)
 workflow.add_node("web_search", web_search)
 workflow.add_node("generate", generate)
 workflow.add_node("rewrite_query", rewrite_query)
 
-# 3. Add the edges (The Flow)
 workflow.set_entry_point("retrieve")
 workflow.add_edge("retrieve", "grade_documents")
 
-# Conditional Edge: After grading, do we search the web or generate?
 workflow.add_conditional_edges(
     "grade_documents",
     decide_to_generate,
@@ -287,10 +333,8 @@ workflow.add_conditional_edges(
     }
 )
 
-# Connect the remaining straight lines
 workflow.add_edge("rewrite_query", "web_search")
 
-# After generation, check for hallucinations
 workflow.add_conditional_edges(
     "generate",
     grade_generation_v_documents_and_question,
@@ -300,13 +344,10 @@ workflow.add_conditional_edges(
     }
 )
 
-# 4. Compile!
 app = workflow.compile()
 
 
 if __name__ == "__main__":
-    # Test 1: Ask a question that is DEFINITELY inside your PDF
-    # (Change this string to match something in your sample PDF)
     print("\n\n=== TEST 1: LOCAL KNOWLEDGE ===")
     inputs = {"question": "What is the main topic discussed in the provided document?"} 
     
@@ -318,7 +359,6 @@ if __name__ == "__main__":
     print(value["generation"])
 
 
-    # Test 2: Ask a question that is DEFINITELY NOT in your PDF
     print("\n\n=== TEST 2: FORCING THE WEB FALLBACK ===")
     inputs = {"question": "What is the weather in Tokyo today?"}
     

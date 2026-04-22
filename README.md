@@ -1,145 +1,60 @@
-# 🔍 Agentic CRAG (Corrective RAG) System
+# 🔍 Enterprise Agentic CRAG (Corrective RAG)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
 [![LangChain](https://img.shields.io/badge/LangChain-Integration-green)](https://github.com/langchain-ai/langchain)
 [![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit)](https://streamlit.io/)
-[![Google Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-orange)](https://deepmind.google/technologies/gemini/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com/)
 
-A production-ready **Corrective Retrieval-Augmented Generation (CRAG)** application built with **LangGraph** and **Streamlit**. 
-
-Unlike standard RAG pipelines that blindly rely on retrieved context—even when it's poor or irrelevant—this agentic workflow **self-evaluates** the quality of its retrieval. If the local document context is insufficient, it autonomously falls back to a live web search (via Tavily) and iteratively rewrites queries to find the correct information.
+A production-ready **Corrective Retrieval-Augmented Generation (CRAG)** architecture built with **LangGraph** and **Streamlit**. It self-evaluates retrieval quality, autonomously falling back to web search if local context is insufficient.
 
 ## ✨ Key Features
 
-- **Advanced Agentic Orchestration (LangGraph):** State-machine driven workflow enforcing robust control logic (Retrieve ➡️ Grade Docs ➡️ Generate ➡️ Grade Answer ➡️ Web Fallback/End).
-- **Zero-Hallucination Guardrails (Self-RAG):** Evaluates generated answers against retrieved documents. Ungrounded (hallucinated) answers are instantly rejected, triggering an autonomous query rewrite and web search.
-- **Document Relevance Grading:** Uses an LLM Grader to score retrieval document relevance, filtering out noisy context before generation.
-- **Embedding Fine-Tuning (Domain Adaptation):** Pipeline to generate synthetic QA datasets and fine-tune `HuggingFaceEmbeddings` via Contrastive Learning (Multiple Negatives Ranking Loss) for high domain precision.
-- **Ragas Evaluation Suite:** Automated testing scripts measuring *Faithfulness, Answer Relevancy, Context Precision,* and *Context Recall*.
-- **Dynamic Query Rewriting:** If web search or local context fails, the agent rewrites its own search queries to extract better results.
-- **Semantic Caching:** Zero-latency retrieval for previously asked semantic queries, severely slashing API costs.
-- **Verifiable Output:** Generations provide **clean inline citations**, explicitly referencing source PDF filenames and page numbers.
-- **Observable & Deployable:** Monitored with **LangSmith Tracing** and fully containerized with **Docker**.
-- **Advanced Unstructured Ingestion (LlamaParse):** Vision-Language processing that perfectly extracts nested data, complex tables, and images out of notoriously messy PDFs where classic PyPDF loaders fail.
+- **Advanced Agentic Orchestration:** State-machine workflow via LangGraph with Self-RAG guardrails (Hallucination & Document grading).
+- **Hybrid Search (Custom RRF):** Combines BM25 exact-keyword matching with Chroma DB semantic search using Reciprocal Rank Fusion.
+- **GraphRAG Integration:** Extracts entity relationships via NetworkX during ingestion to enrich LLM context dynamically.
+- **Vision-Language Ingestion:** Uses LlamaParse to accurately extract nested data and complex financial tables from messy PDFs.
+- **Mathematical Evaluation:** Automated pipeline to prove system effectiveness mathematically using the **RAGAS** framework (Faithfulness, Answer Relevancy, Context Precision, Context Recall).
+- **Web Fallback:** Autonomous Tavily web search for out-of-domain questions or rejected context.
 
-<img width="800" alt="LangSmith Tracing" src="assets/langsmith_trace.png">
+## 🧠 System Flow
 
-*Example of complete LLM observability: A trace of the query "who is tushir sahu" passing through the agent. Every node (retrieval, grading, generating) is captured perfectly, showing the exact source document parsed (`Tushir Sahu.pdf`), total latency (18.72s), and total token usage (1.6K tokens) logged directly to the LangChain project dashboard.*
-
-## 🧠 System Architecture
-
-```mermaid
-graph TD
-    A[User Query] --> B(Retrieve Documents from ChromaDB)
-    B --> C{LLM Grader: Are Docs Relevant?}
-    
-    C -- Yes --> D((Generate LLM Answer))
-    C -- No / Partial --> E(Web Search via Tavily)
-    
-    E --> F{Check Search Results}
-    F -- Sufficient --> D
-    F -- Insufficient --> G(Rewrite Query)
-    G --> E
-    
-    D --> I{Hallucination Grader: Is Answer Grounded?}
-    I -- Yes --> H[Final Evaluated Response + Sources]
-    I -- No --> G
-```
-
-```text
-CRAG/
-├── src/                    # Source code
-│   ├── agent/              # LangGraph Agent Logic
-│   │   ├── __init__.py
-│   │   ├── graph.py        # Core orchestration (CRAG + Self-RAG)
-│   │   └── semantic_cache.py # Semantic caching logic
-│   └── utils/              # Utility & ML scripts
-│       ├── __init__.py
-│       ├── finetune_embeddings.py # Contrastive Learning domain adaptation
-│       ├── generate_synthetic_data.py # Synthetic QA dataset generation
-│       └── ingest.py
-├── data/                   # Local databases (git-ignored)
-│   ├── chroma_db/          # Persistent Vector Store
-│   ├── cache_db/           # Persistent Cache Store
-│   └── finetuned-domain-embeddings/ # Custom local embedding model
-├── tests/                  # Evaluation and testing
-│   ├── __init__.py
-│   └── evaluate_rag.py     # Ragas evaluation pipeline
-├── app.py                  # Streamlit Frontend application
-├── Dockerfile              # Containerization
-├── requirements.txt        # Dependencies
-└── .env                    # Environment variables (Google API, Tavily, LangSmith)
-```
-
-## 🛠 Tech Stack
-
-- **Orchestration:** LangGraph, LangChain
-- **LLM:** Google Gemini (`gemini-2.5-flash`)
-- **Embeddings:** HuggingFace (`all-MiniLM-L6-v2`)
-- **Vector Database:** ChromaDB (Local SQLite)
-- **Web Search API:** Tavily
-- **Frontend UI:** Streamlit
-- **DevOps:** Docker, LangSmith
+1. **Retrieve:** Hybrid Search (BM25 + Chroma) + GraphRAG network contexts.
+2. **Grade Docs:** LLM Grader assesses if the retrieved chunks actually answer the query.
+3. **Web Fallback:** If docs are irrelevant, query is rewritten and passed to Tavily web search.
+4. **Generate & Check Hallucinations:** Generates answer, then evaluates if the response is safely grounded in the provided context before showing it to the user.
 
 ## 🚀 Getting Started
 
-### Prerequisites
-Make sure you have an API key for **Google Gemini** and **Tavily**. 
-
-### 1. Bare-metal Installation
+**1. Install Dependencies**
 ```bash
-# Clone the repository
 git clone https://github.com/your-username/CRAG.git
 cd CRAG
-
-# Install dependencies
 pip install -r requirements.txt
+```
 
-# Set your environment variables
-echo "GOOGLE_API_KEY=your_gemini_key" >> .env
-echo "TAVILY_API_KEY=your_tavily_key" >> .env
-echo "LANGCHAIN_TRACING_V2=true" >> .env
-echo "LANGCHAIN_API_KEY=your_langsmith_key" >> .env
+**2. Configure Environment (`.env`)**
+```env
+GOOGLE_API_KEY=your_gemini_key
+TAVILY_API_KEY=your_tavily_key
+LLAMA_CLOUD_API_KEY=your_llamaparse_key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=your_langsmith_key
+```
 
-# Run the app
+**3. Run the App**
+```bash
 streamlit run app.py
 ```
 
-### 2. Docker Deployment
+**4. Run with Docker / Docker Compose**
+Using Docker:
 ```bash
-# Build the image
 docker build -t crag-agent .
-
-# Run the container (mapping ports and passing local .env)
 docker run -p 8501:8501 --env-file .env crag-agent
 ```
 
-## 💡 How to Use
+Or simply using Docker Compose:
+```bash
+docker-compose up --build -d
+```
 
-1. **Upload Documents:** Use the sidebar to upload any PDF. It will be immediately chunked and embedded into the local ChromaDB.
-2. **Chat with the Agent:** Ask highly specific questions about the document. 
-3. **Observe the Agent:** The Streamlit UI will display the LangGraph state transitions in real time (`Retrieving...`, `Grading...`, `Web Searching...`, etc.).
-4. **Verify Sources:** Check the `### References` generated at the bottom of responses, or expand the "Show Sources" accordion to view the raw snippet chunks used.
-
-## 🔜 Future Roadmap
-
-- Integrate **LangGraph Checkpointers** for robust, cross-session thread database persistence.
-- Implement **Token Streaming** to the frontend UI to eliminate perceived generation latency.
-- Displace API dependencies by fine-tuning a **Small Language Model (e.g. LLaMA-3 8B via LoRA)** to locally execute binary document/hallucination grading.
-- Support multimodal document ingestion (images, charts, tables).
-## 🚀 Deployment (Docker)
-
-To make things easy for reviewers, you can run this entire architecture locally with zero dependency headaches using Docker.
-
-1. **Clone the repository**
-2. **Setup your environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and paste in your Google API and Tavily Search keys
-   ```
-3. **Fire it up**:
-   ```bash
-   docker-compose up --build -d
-   ```
-4. **Open your browser**: navigate to `http://localhost:8501` to test the agent! Your cached queries and vector embeddings are mounted persistently to the container automatically.
+**# App UI runs at http://localhost:8501**

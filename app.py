@@ -1,3 +1,5 @@
+import networkx as nx
+import pickle
 import streamlit as st
 import os
 import tempfile
@@ -37,8 +39,6 @@ with st.sidebar:
     if uploaded_file is not None:
         if st.button("Ingest Document"):
             with st.spinner("Chunking and Embedding Document..."):
-                # Streamlit keeps files in memory. We need to save it temporarily 
-                # so the PyPDFLoader can read it from a file path.
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                     tmp_file.write(uploaded_file.getvalue())
                     tmp_file_path = tmp_file.name
@@ -73,6 +73,22 @@ with st.sidebar:
                 # Add the new chunks to our existing ChromaDB
                 vector_db.add_documents(documents=chunks)
                 
+                graph_path = "./data/graph_db.pkl"
+                if os.path.exists(graph_path):
+                    with open(graph_path, 'rb') as f:
+                        knowledge_graph = pickle.load(f)
+                else:
+                    knowledge_graph = nx.Graph()
+                    
+                knowledge_graph.add_node(uploaded_file.name, type="Document")
+                for chunk in chunks[:10]: 
+                    entity = chunk.page_content[:25].strip()
+                    knowledge_graph.add_node(entity, type="Entity")
+                    knowledge_graph.add_edge(uploaded_file.name, entity, relation="CONTAINS")
+                    
+                with open(graph_path, 'wb') as f:
+                    pickle.dump(knowledge_graph, f)
+                
                 # Clean up the temporary file
                 os.remove(tmp_file_path)
                 st.success(f"Successfully learned {len(chunks)} chunks from {uploaded_file.name}!")
@@ -91,6 +107,8 @@ with st.sidebar:
     if st.button("Clear Vector DB (Forget PDFs)"):
         if os.path.exists("./data/chroma_db"):
             shutil.rmtree("./data/chroma_db")
+            if os.path.exists("./data/graph_db.pkl"):
+                os.remove("./data/graph_db.pkl")
             st.success("Vector DB wiped! The agent has forgotten all PDFs.")
         else:
             st.info("Vector DB is already empty.")
