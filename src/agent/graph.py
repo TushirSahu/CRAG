@@ -16,6 +16,8 @@ import time
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from dotenv import load_dotenv
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain_core.retrievers import BaseRetriever
 
 load_dotenv()
 
@@ -39,10 +41,6 @@ else:
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 vector_db = Chroma(persist_directory="./data/chroma_db", embedding_function=embeddings)
-
-
-from langchain_core.callbacks import CallbackManagerForRetrieverRun
-from langchain_core.retrievers import BaseRetriever
 
 class CustomEnsembleRetriever(BaseRetriever):
     retrievers: list

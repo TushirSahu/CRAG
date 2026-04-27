@@ -1,0 +1,14 @@
+# Global Configuration for CRAG
+vector_db:
+  path: "./data/chroma_db"
+  collection: "knowledge_base"
+
+retriever:
+  chunk_size: 500
+  chunk_overlap: 50
+  k_retrieval: 3
+
+models:
+  llm: "gemini-2.5-flash"
+  grader_llm: "gemma-3-4b-it"
+  base_embedding: "all-MiniLM-L6-v2"

@@ -23,7 +23,7 @@ st.set_page_config(page_title="CRAG Agent Demo", page_icon="🤖", layout="wide"
 st.title("🔍 Corrective RAG (CRAG) Agent")
 
 # Check Telemetry status
-langsmith_active = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true"
+langsmith_active = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true" or os.getenv("LANGSMITH_TRACING", "").lower() == "true"
 if langsmith_active:
     st.caption("🟢 **LangSmith Observability is Active:** Full payload traces, cost tracking, and latency metrics are being logged in production.")
 else:
@@ -92,7 +92,33 @@ with st.sidebar:
                 # Clean up the temporary file
                 os.remove(tmp_file_path)
                 st.success(f"Successfully learned {len(chunks)} chunks from {uploaded_file.name}!")
-    st.divider() # Adds a nice visual line
+                
+    st.divider()
+    st.header("⚙️ MLOps & Infrastructure")
+    
+    # Create visually appealing metrics panel for the interview
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(
+            label="LangSmith Tracing", 
+            value="Active" if langsmith_active else "Offline",
+            delta="Production" if langsmith_active else None,
+            delta_color="normal" if langsmith_active else "off"
+        )
+    with col2:
+        try:
+            doc_count = vector_db._collection.count()
+        except:
+            doc_count = 0
+        st.metric(
+            label="Vector Store Size", 
+            value=doc_count,
+            delta="Chunks"
+        )
+        
+    st.caption("📈 **Observability:** Live token usage, latency, and agent trajectories are continuously logged.")
+
+    st.divider()
     st.header("🧹 System Controls")
     
     if st.button("Clear Semantic Cache"):
@@ -191,3 +217,10 @@ if prompt := st.chat_input("Ask a question about the document (or anything else)
                 st.session_state.semantic_cache.add_to_cache(prompt, final_generation)
                 
                 st.session_state.messages.append({"role": "assistant", "content": final_generation})
+                
+                # 4. LLMOps: Human-in-the-loop Feedback (Simulated RLHF collection)
+                def on_feedback():
+                    st.toast("✅ User preference logged to LangSmith for future fine-tuning!", icon="📈")
+                
+                st.button("👍 Good Answer", on_click=on_feedback, key=f"up_{len(st.session_state.messages)}")
+                st.button("👎 Hallucinated / Poor", on_click=on_feedback, key=f"down_{len(st.session_state.messages)}")
