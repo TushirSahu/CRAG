@@ -303,15 +303,54 @@ def grade_generation_v_documents_and_question(state: GraphState):
         return "not useful"
 
 
+def route_query_intent(state: GraphState):
+    print("---ROUTING INITIAL QUERY---")
+    question = state["question"]
+    prompt = ChatPromptTemplate.from_template(
+        "You are an expert intent router. Classify the following user query into one of three buckets:\n"
+        "1. 'vector': For questions about policies, unstructured documents, or general knowledge.\n"
+        "2. 'web': For live information, current weather, or recent news.\n"
+        "3. 'sql': For questions needing structured data, counting users, or analytics.\n"
+        "Return strictly ONLY one word: 'vector', 'web', or 'sql'.\n"
+        "Question: {question}"
+    )
+    router = prompt | llm | StrOutputParser()
+    decision = router.invoke({"question": question}).strip().lower()
+    
+    if "web" in decision:
+        print("---ROUTE: DIRECT WEB SEARCH---")
+        return "web_search"
+    elif "sql" in decision:
+        print("---ROUTE: SQL TOOL---")
+        return "sql_tool"
+    else:
+        print("---ROUTE: VECTOR SEARCH---")
+        return "retrieve"
+
+def run_sql(state: GraphState):
+    print("---EXECUTING SQL MOCK---")
+    documents = [{"content": "Structured Data: 420 new users signed up yesterday.", "metadata": {"source": "SQL Database"}}]
+    return {"documents": documents, "question": state["question"]}
+
+
 workflow = StateGraph(GraphState)
 
 workflow.add_node("retrieve", retrieve)
 workflow.add_node("grade_documents", grade_documents)
 workflow.add_node("web_search", web_search)
+workflow.add_node("sql_tool", run_sql)
 workflow.add_node("generate", generate)
 workflow.add_node("rewrite_query", rewrite_query)
 
-workflow.set_entry_point("retrieve")
+workflow.set_conditional_entry_point(
+    route_query_intent,
+    {
+        "web_search": "web_search",
+        "sql_tool": "sql_tool",
+        "retrieve": "retrieve",
+    }
+)
+workflow.add_edge("sql_tool", "generate")
 workflow.add_edge("retrieve", "grade_documents")
 
 workflow.add_conditional_edges(
@@ -359,6 +398,16 @@ if __name__ == "__main__":
 
     print("\n\n=== TEST 2: FORCING THE WEB FALLBACK ===")
     inputs = {"question": "What is the weather in Tokyo today?"}
+    
+    for output in app.stream(inputs):
+        for key, value in output.items():
+            pass
+            
+    print("\n✅ Final Answer:")
+    print(value["generation"])
+
+    print("\n\n=== TEST 3: STRUCTURED DATA ROUTING (SQL) ===")
+    inputs = {"question": "How many users signed up yesterday?"}
     
     for output in app.stream(inputs):
         for key, value in output.items():

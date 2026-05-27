@@ -16,7 +16,6 @@ def build_vector_db():
     
     file_path = "./new.pdf"
     
-    # 💎 ENTERPRISE UPGRADE: Try LlamaParse for complex PDFs (tables, images, columns)
     llama_key = os.getenv("LLAMA_CLOUD_API_KEY")
     if llama_key:
         print("🧠 LlamaParse API Key detected. Using Advanced VLM PDF extraction...")

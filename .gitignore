@@ -16,3 +16,6 @@ data/finetuned-domain-embeddings/
 
 # OS generated files
 .DS_Store
+*.pdf
+checkpoints/
+.github/workflows/

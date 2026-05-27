@@ -1,16 +1,3 @@
-"""
-Domain Adaptation for Embedding Models (Contrastive Learning)
-
-This script demonstrates how to fine-tune the base HuggingFace embedding model 
-('all-MiniLM-L6-v2') on your specific domain data.
-
-Why do this?
-Base embedding models are trained on Wikipedia and general knowledge. They struggle with 
-highly technical vocabulary. By fine-tuning using Multiple Negatives Ranking Loss (MNRL), 
-we force the model to map domain-specific questions closer to their highly technical 
-paragraphs in the vector space, massively boosting ChromaDB's retrieval precision.
-"""
-
 import os
 import pandas as pd
 from sentence_transformers import SentenceTransformer, InputExample, losses
@@ -52,15 +39,10 @@ def finetune_embeddings():
             ])
         ]
 
-    # 3. Create a DataLoader
     train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=2)
 
-    # 4. Define the Loss Function (Multiple Negatives Ranking Loss)
-    # This is the gold standard for Retrieval/Search fine-tuning.
-    # It pulls the question and correct passage together, while pushing ALL other passages in the batch away.
     train_loss = losses.MultipleNegativesRankingLoss(model=model)
 
-    # 5. Fine-Tune the Model
     output_path = "./data/finetuned-domain-embeddings"
     print(f"🧠 Fine-tuning model using Multiple Negatives Ranking Loss...")
     
