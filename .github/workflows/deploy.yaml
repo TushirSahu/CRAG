@@ -1,0 +1,33 @@
+name: Simulate Production Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  dry-run-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init & Plan (No-Cost Mock)
+        run: |
+          cd terraform
+          terraform init -backend=false
+          terraform validate
+          echo "Terraform syntax validated. Ready to provision AWS/GCP resources."
+
+  simulated-k8s-deploy:
+    needs: dry-run-infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: K8s Manifest Validation (Dry Run)
+        run: |
+          # Validates the YAML is structurally correct without needing a real cluster
+          kubectl apply -f k8s/ --dry-run=client
+          echo "Kubernetes manifests validated. Ready to apply to EKS/GKE."

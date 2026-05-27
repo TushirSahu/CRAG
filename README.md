@@ -1,76 +1,110 @@
-# 🔍 Enterprise Agentic CRAG (Corrective RAG)
+# Production-Ready Agentic RAG (Corrective & Routed RAG)
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/release/python-3100/)
-[![LangChain](https://img.shields.io/badge/LangChain-Integration-green)](https://github.com/langchain-ai/langchain)
-[![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B?logo=streamlit)](https://streamlit.io/)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
+![LangGraph](https://img.shields.io/badge/LangGraph-Agentic-orange)
+![MLOps](https://img.shields.io/badge/MLOps-DVC%20%7C%20MLflow-green)
+![DevOps](https://img.shields.io/badge/DevOps-Docker%20%7C%20K8s%20%7C%20Terraform-blueviolet)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-black)
 
-A production-ready **Corrective Retrieval-Augmented Generation (CRAG)** architecture built with **LangGraph** and **Streamlit**. It self-evaluates retrieval quality, autonomously falling back to web search if local context is insufficient.
+## 📌 Overview
+This project implements an **Enterprise-Grade Agentic Retrieval-Augmented Generation (RAG)** system. Rather than relying on a naive vector-search approach, the system utilizes a **LangGraph-based control flow** to route queries based on user intent and perform self-correction if the retrieved documents lack relevance. 
 
-## ✨ Key Features
+Designed with extensive **MLOps and DevOps best practices**, the repository features complete infrastructure-as-code (IaC), containerization, CI/CD pipelines, and data version control, making it a scalable blueprint for real-world AI applications.
 
-- **Advanced Agentic Orchestration:** State-machine workflow via LangGraph with Self-RAG guardrails (Hallucination & Document grading).
-- **Hybrid Search (Custom RRF):** Combines BM25 exact-keyword matching with Chroma DB semantic search using Reciprocal Rank Fusion.
-- **GraphRAG Integration:** Extracts entity relationships via NetworkX during ingestion to enrich LLM context dynamically.
-- **Vision-Language Ingestion:** Uses LlamaParse to accurately extract nested data and complex financial tables from messy PDFs.
-- **Embedding Fine-Tuning:** Pipeline for domain adaptation using synthetic QA generation and Contrastive Learning (Multiple Negatives Ranking Loss) to fine-tune HuggingFace embeddings.
-- **Mathematical Evaluation:** Automated pipeline to prove system effectiveness mathematically using the **RAGAS** framework (Faithfulness, Answer Relevancy, Context Precision, Context Recall).
-- **Web Fallback:** Autonomous Tavily web search for out-of-domain questions or rejected context.
+---
 
-## 🧠 System Flow
+## The Real-World Problem
+Most standard RAG pipelines suffer from two major flaws in production:
+1. **The "One Size Fits All" Problem**: Naive RAG forces every user question through an Embedding/Vector database. This works great for unstructured PDFs but completely fails when a user asks for structured analytics (e.g., *"How many users signed up today?"*) or live data (e.g., *"What is the weather?"*).
+2. **Hallucinations from Bad Retrieval**: If the vector database returns irrelevant chunks, the LLM usually tries to answer anyway, resulting in confident hallucinations. 
 
-1. **Retrieve:** Hybrid Search (BM25 + Chroma) + GraphRAG network contexts.
-2. **Grade Docs:** LLM Grader assesses if the retrieved chunks actually answer the query.
-3. **Web Fallback:** If docs are irrelevant, query is rewritten and passed to Tavily web search.
-4. **Generate & Check Hallucinations:** Generates answer, then evaluates if the response is safely grounded in the provided context before showing it to the user.
+## The Solution
+This project solves these issues by introducing an **Intent Router** and a **Corrective Fallback Mechanism** (CRAG):
+* **Intent Routing**: Queries are first analyzed by an LLM router. Document queries go to the Vector DB, analytic queries go to an SQL agent, and live-data queries hit Web Search APIs.
+* **Self-Reflection (Grading)**: Retrieved documents are evaluated for relevance. If they are irrelevant, the system autonomously **rewrites the query** and falls back to a targeted web search to prevent hallucinations.
 
-## ⚙️ Enterprise MLOps Architecture
+---
 
-This repository isn't just a script—it's a decoupled **LLMOps System** designed for production inference and continuous data flywheels.
+## Architecture & Code Flow
 
-- **FastAPI Microservice:** The core LangGraph agent is isolated behind a scalable REST API.
-- **Containerization & IaC:** Dockerized environments, Kubernetes manifests (`k8s/`), and Terraform modules (`terraform/`).
-- **CI/CD & DVC:** Automated workflows (`.github/`) and Data Version Control (`dvc.yaml`) for embedding model parameters.
-- **Custom Logging:** Resilient global logging and traceback captures (`src/utils`).
-
-## 🚀 Getting Started
-
-**1. Install the Project Package**
-```bash
-git clone https://github.com/your-username/CRAG.git
-cd CRAG
-pip install -r requirements.txt
-pip install -e .  # Installs the local CRAG package
+```mermaid
+graph TD
+    User([User Query]) --> Router{Intent Router Node}
+    
+    Router -->|Document / Policy| Retriever[Hybrid Retrieval: ChromaDB + Graph]
+    Router -->|Analytics / Count| SQL[SQL Database Agent]
+    Router -->|Live Information| Web[Web Search API]
+    
+    Retriever --> Grader{Grade Documents}
+    Grader -->|Relevant Document Found| Generator[LLM Generator]
+    Grader -->|Irrelevant Document| Rewriter[Rewrite Query]
+    
+    Rewriter --> Web
+    Web --> Generator
+    SQL --> Generator
+    
+    Generator --> Output([Final Answer])
 ```
 
-**2. Configure Environment (`.env`)**
-```env
-GOOGLE_API_KEY=your_gemini_key
-TAVILY_API_KEY=your_tavily_key
-LLAMA_CLOUD_API_KEY=your_llamaparse_key
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=your_langsmith_key
+### 1. **`src/agent/graph.py` (The Brain)**
+Defines the `StateGraph`. The agent maintains conversation state and loops through:
+- **Routing**: Vector vs. Web vs. SQL.
+- **Retrieval**: Uses a custom hybrid retriever (BM25 + Semantic Search).
+- **Grading & Correction**: Validates document relevance and grounds the generation to prevent hallucinations.
+
+---
+
+## Project Layout & MLOps Structure
+
+A core focus of this project is maintainability and scalability for ML Engineering teams:
+
+```text
+├── api/                  # FastAPI backend serving the LangGraph agent
+├── configs/              # Centralized hyperparameters (model, data, config)
+├── data/                 # ChromaDB, Raw text, and Fine-Tuned Domain Embeddings
+├── dvc.yaml & params.yaml# Data Version Control pipelines for tracking datasets
+├── mlflow/               # MLflow tracking for embedding model experimentation
+├── src/                  
+│   ├── agent/            # LangGraph routing, retrieval, and generation logic
+│   ├── data/             # Ingestion and Preprocessing pipelines
+│   ├── models/           # Custom model evaluation and training scripts
+│   └── monitoring/       # Data drift detection and performance metrics
+├── tests/                # Unit tests and RAG Evaluation tools (Ragas)
 ```
 
-**3. Run the Backend API (FastAPI)**
-```bash
-uvicorn api.main:app --reload
-# Access Interactive Swagger Docs: http://localhost:8000/docs
-```
+---
 
-**4. Run the Visual Frontend (Streamlit)**
-```bash
-streamlit run app.py
-# Access Human-in-the-loop Agent UI: http://localhost:8501
-```
+## DevOps & Cloud-Native CI/CD
 
-**5. Run with Docker / Docker Compose**
-Using Docker:
-```bash
-docker build -t crag-agent .
-docker run -p 8501:8501 -p 8000:8000 --env-file .env crag-agent
-```
+To ensure cost-efficiency during development while remaining production-ready, this project adopts a **"Dry-Run" Cloud strategy**.
 
-Or simply using Docker Compose:
-```bash
-docker-compose up --build -d
-```
+* **Containerized Workloads (`Dockerfile`, `docker-compose.yml`)**: Complete environment isolation for local testing.
+* **Kubernetes Orchestration (`k8s/`)**: Contains manifests for Deployments, Services, and Horizontal Pod Autoscalers (HPA) to handle traffic spikes.
+* **Infrastructure as Code (`terraform/`)**: Defines the required cloud infrastructure (e.g., VPCs, EKS/GKE clusters) declaratively.
+* **GitHub Actions (`.github/workflows/`)**: 
+  - **CI Pipeline**: Syntax checks and mocked unit tests.
+  - **CD Pipeline**: Performs `terraform validate` and `kubectl apply --dry-run` to mathematically prove the cloud infrastructure and orchestration manifests are flawless, without incurring unnecessary cloud provider costs.
+
+---
+
+## 💻 How to Run Locally
+
+1. **Clone and Install:**
+   ```bash
+   git clone https://github.com/your-username/CRAG.git
+   cd CRAG
+   pip install -r requirements.txt
+   ```
+2. **Set Environment Variables:**
+   Create a `.env` file and add your keys (e.g., `GOOGLE_API_KEY`, `TAVILY_API_KEY`).
+
+3. **Run the Graph (Terminal Mode):**
+   ```bash
+   python src/agent/graph.py
+   ```
+
+4. **Run via Docker (Full Stack):**
+   ```bash
+   docker-compose up --build
+   ```
+   *(This spins up the FastAPI backend and necessary vector databases)*

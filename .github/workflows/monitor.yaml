@@ -1,0 +1,12 @@
+name: Model Monitoring
+on:
+  schedule:
+    - cron: '0 0 * * *' # Runs exactly at midnight daily
+jobs:
+  drift-detection:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -r requirements.txt
+      - name: Run Drift Detection Script
+        run: python src/monitoring/drift_detection.py
