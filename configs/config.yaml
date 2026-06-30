@@ -31,6 +31,8 @@ trust:                          # verifiable answers + abstention (Pillar B)
   enabled: true
   min_confidence: 0.5
   abstain_message: "I don't have enough grounded evidence to answer this confidently."
+  # Shown when the verifier itself could not run (distinct from low grounding).
+  unverified_prefix: "⚠️ I couldn't automatically verify this answer against the sources:\n\n"
 
 models:
   llm: "gemini-2.5-flash"
@@ -44,3 +46,7 @@ agent:
 cache:
   path: "./data/cache_db"
   threshold: 0.7
+
+sql:                            # read-only text-to-SQL analytics agent
+  db_path: "./data/analytics.db"
+  max_rows: 50                 # cap rows returned to the LLM

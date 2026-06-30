@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from functools import lru_cache
-from typing import List, TypedDict
+from typing import TYPE_CHECKING, List, TypedDict
 
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
@@ -21,10 +21,16 @@ from src.agent.trust import verify_generation
 from src.core.config import get_settings
 from src.core.embeddings import get_embeddings
 from src.index.vectorstore import KnowledgeStore
+from src.utils.logger import logger
+
+if TYPE_CHECKING:
+    from src.agent.sql_tool import SQLTool
 
 
 class GraphState(TypedDict, total=False):
     question: str
+    original_question: str  # the user's phrasing, preserved across rewrites (cache key)
+    cached: bool            # answer served from the semantic cache
     chat_history: List[dict]
     generation: str
     web_search_needed: bool
@@ -33,6 +39,7 @@ class GraphState(TypedDict, total=False):
     as_of: float          # Pillar A: point-in-time queries (epoch seconds)
     sources: List[str]    # source ACL filter
     confidence: float     # Pillar B: trust score of the final answer
+    verified: bool        # whether the trust check itself ran successfully
     trust: dict
 
 
@@ -51,9 +58,33 @@ def get_store() -> KnowledgeStore:
     return KnowledgeStore(get_embeddings())
 
 
+@lru_cache(maxsize=1)
+def get_cache():
+    from src.agent.semantic_cache import LocalSemanticCache
+
+    return LocalSemanticCache()
+
+
 # --- nodes ---------------------------------------------------------------
+def cache_lookup(state: GraphState) -> GraphState:
+    """Entry node: short-circuit to a cached answer for a semantically similar question."""
+    logger.info("--- Cache lookup ---")
+    question = state["question"]
+    answer = get_cache().check_cache(question)
+    if answer is not None:
+        return {"generation": answer, "cached": True, "original_question": question, "documents": []}
+    return {"cached": False, "original_question": question}
+
+
+def cache_write(state: GraphState) -> GraphState:
+    """Persist a trusted answer under the user's original question phrasing."""
+    logger.info("--- Cache write ---")
+    get_cache().add_to_cache(state.get("original_question", state["question"]), state["generation"])
+    return {}
+
+
 def retrieve(state: GraphState) -> GraphState:
-    print("--- Retrieve (LanceDB hybrid + temporal) ---")
+    logger.info("--- Retrieve (LanceDB hybrid + temporal) ---")
     docs = get_store().search(
         state["question"],
         as_of=state.get("as_of"),
@@ -63,7 +94,7 @@ def retrieve(state: GraphState) -> GraphState:
 
 
 def grade_documents(state: GraphState) -> GraphState:
-    print("--- Grade documents ---")
+    logger.info("--- Grade documents ---")
     grader = prompts.GRADE_DOCUMENTS | get_llm("grade") | StrOutputParser()
     pause = get_settings().agent.grade_rate_limit_seconds
     relevant = []
@@ -81,7 +112,7 @@ def grade_documents(state: GraphState) -> GraphState:
 
 
 def web_search(state: GraphState) -> GraphState:
-    print("--- Web search fallback ---")
+    logger.info("--- Web search fallback ---")
     documents = state.get("documents", []) if state.get("retry_count", 0) == 0 else []
     results = TavilySearchResults(max_results=2).invoke({"query": state["question"]})
     if isinstance(results, list):
@@ -95,14 +126,35 @@ def web_search(state: GraphState) -> GraphState:
     return {"documents": documents, "question": state["question"]}
 
 
+@lru_cache(maxsize=1)
+def get_sql_tool() -> "SQLTool":
+    from src.agent.sql_tool import SQLTool
+
+    return SQLTool(llm=get_llm("grade"))
+
+
 def run_sql(state: GraphState) -> GraphState:
-    print("--- SQL tool (mock) ---")
-    docs = [{"content": "Structured Data: 420 new users signed up yesterday.", "metadata": {"source": "SQL Database"}}]
-    return {"documents": docs, "question": state["question"]}
+    logger.info("--- SQL tool (read-only text-to-SQL) ---")
+    tool = get_sql_tool()
+    if not tool.available:
+        doc = {
+            "content": "No analytics database is configured. Run scripts/seed_analytics_db.py.",
+            "metadata": {"source": "SQL Database"},
+        }
+        return {"documents": [doc], "question": state["question"]}
+    try:
+        doc = tool.query(state["question"])
+    except Exception as exc:  # generation/validation/execution failure → surface, don't crash
+        logger.warning("SQL tool failed: %s", exc)
+        doc = {
+            "content": f"The analytics query could not be completed: {exc}",
+            "metadata": {"source": "SQL Database"},
+        }
+    return {"documents": [doc], "question": state["question"]}
 
 
 def generate(state: GraphState) -> GraphState:
-    print("--- Generate ---")
+    logger.info("--- Generate ---")
     history = state.get("chat_history", [])
     history_text = ""
     if history:
@@ -126,20 +178,30 @@ def generate(state: GraphState) -> GraphState:
 
 def verify(state: GraphState) -> GraphState:
     """Pillar B: score how well the answer is grounded in the retrieved context."""
-    print("--- Verify (trust layer) ---")
+    logger.info("--- Verify (trust layer) ---")
     report = verify_generation(state["generation"], state["documents"], get_llm("grade"))
-    print(f"    confidence={report['confidence']:.2f} ({report['supported']}/{report['total']} claims)")
-    return {"confidence": report["confidence"], "trust": report}
+    logger.info(
+        "confidence=%.2f (%d/%d claims) verified=%s",
+        report["confidence"], report["supported"], report["total"], report["verified"],
+    )
+    return {"confidence": report["confidence"], "verified": report["verified"], "trust": report}
 
 
 def abstain(state: GraphState) -> GraphState:
-    print("--- Abstain (insufficient grounded evidence) ---")
+    logger.info("--- Abstain (insufficient grounded evidence) ---")
     cfg = get_settings().trust
     return {"generation": cfg.abstain_message, "confidence": state.get("confidence", 0.0)}
 
 
+def unverified(state: GraphState) -> GraphState:
+    """The verifier couldn't run — return the answer, but flagged as unverified."""
+    logger.info("--- Unverified (trust check unavailable) ---")
+    cfg = get_settings().trust
+    return {"generation": cfg.unverified_prefix + state.get("generation", "")}
+
+
 def rewrite_query(state: GraphState) -> GraphState:
-    print("--- Rewrite query ---")
+    logger.info("--- Rewrite query ---")
 
     class Rewritten(BaseModel):
         optimized_query: str = Field(description="Optimized search query. No conversational text.")
@@ -153,6 +215,13 @@ def rewrite_query(state: GraphState) -> GraphState:
 
 
 # --- routing decisions ---------------------------------------------------
+def decide_after_cache(state: GraphState) -> str:
+    """Skip the whole pipeline on a cache hit; otherwise route by intent."""
+    if state.get("cached"):
+        return "cached"
+    return route_query_intent(state)
+
+
 def route_query_intent(state: GraphState) -> str:
     decision = (prompts.ROUTER | get_llm("grade") | StrOutputParser()).invoke(
         {"question": state["question"]}
@@ -173,10 +242,15 @@ def decide_after_web_search(state: GraphState) -> str:
 
 
 def decide_after_verify(state: GraphState) -> str:
-    """Accept, retry, or abstain based on the trust score."""
+    """Accept, retry, abstain, or flag-unverified based on the trust check.
+
+    A *verified* but poorly-grounded answer abstains; an answer the verifier
+    *couldn't check* is returned with an unverified warning instead — abstaining
+    there would discard a possibly-good answer over a checker failure.
+    """
     cfg = get_settings()
-    if state.get("confidence", 1.0) >= cfg.trust.min_confidence:
+    if state.get("verified", True) and state.get("confidence", 0.0) >= cfg.trust.min_confidence:
         return "useful"
-    if state.get("retry_count", 0) >= cfg.agent.max_retries:
-        return "abstain"
-    return "retry"
+    if state.get("retry_count", 0) < cfg.agent.max_retries:
+        return "retry"
+    return "abstain" if state.get("verified", True) else "unverified"

@@ -31,7 +31,7 @@ def finetune_embeddings():
             ]),
             InputExample(texts=[
                 "What is the purpose of semantic caching in this architecture?", 
-                "Semantic caching stores previous user queries and their generated answers in a local ChromaDB instance. When a semantically similar question is asked, it returns the cached answer instantly, bypassing the LLM to save API costs and reduce latency."
+                "Semantic caching stores previous user queries and their generated answers in a local LanceDB instance. When a semantically similar question is asked, it returns the cached answer instantly, bypassing the LLM to save API costs and reduce latency."
             ]),
             InputExample(texts=[
                 "Why do we rewrite queries during the web search phase?", 

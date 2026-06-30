@@ -41,10 +41,12 @@ This project solves these issues by introducing an **Intent Router** and a **Cor
 
 ```mermaid
 graph TD
-    User([User Query]) --> Router{Intent Router Node}
+    User([User Query]) --> Cache{Semantic Cache}
+    Cache -->|hit| Output
+    Cache -->|miss| Router{Intent Router Node}
 
     Router -->|Document / Policy| Retriever[LanceDB Hybrid + RAPTOR + Temporal]
-    Router -->|Analytics / Count| SQL[SQL Database Agent]
+    Router -->|Analytics / Count| SQL[Read-only Text-to-SQL Agent]
     Router -->|Live Information| Web[Web Search API]
 
     Retriever --> Grader{Grade Documents}
@@ -56,9 +58,10 @@ graph TD
     SQL --> Generator
 
     Generator --> Verify{Trust Layer: claim-level grounding}
-    Verify -->|confidence ≥ threshold| Output([Answer + Trust Score])
+    Verify -->|confidence ≥ threshold| Cache2[Cache write] --> Output([Answer + Trust Score])
     Verify -->|low, retries left| Rewriter
     Verify -->|low, no retries| Abstain([I don't have enough grounded evidence])
+    Verify -->|verifier failed| Unverified([Answer returned, flagged unverified])
 ```
 
 ### Code map
@@ -67,7 +70,9 @@ graph TD
 - **`src/core/embeddings.py`** — one shared embedder for retriever + cache.
 - **`src/index/vectorstore.py`** — LanceDB hybrid store with temporal `as_of` + source-ACL filters.
 - **`src/index/raptor.py`** — RAPTOR tree builder (GMM clustering + LLM summaries).
-- **`src/agent/trust.py`** — verifiable trust layer (claim grounding → confidence → abstention).
+- **`src/agent/trust.py`** — verifiable trust layer (claim grounding → confidence → abstain / unverified). Fails *safe*.
+- **`src/agent/sql_tool.py`** — read-only text-to-SQL agent over a seeded SQLite analytics DB (write-guarded).
+- **`src/agent/semantic_cache.py`** — LanceDB semantic cache, wired into the graph as `cache_lookup` / `cache_write`.
 
 ### Build the index
 ```bash
@@ -92,7 +97,7 @@ A core focus of this project is maintainability and scalability for ML Engineeri
 ```text
 ├── api/                  # FastAPI backend serving the LangGraph agent
 ├── configs/              # Centralized hyperparameters (model, data, config)
-├── data/                 # ChromaDB, Raw text, and Fine-Tuned Domain Embeddings
+├── data/                 # LanceDB (knowledge base + semantic cache), analytics.db, Fine-Tuned Domain Embeddings
 ├── dvc.yaml & params.yaml# Data Version Control pipelines for tracking datasets
 ├── mlflow/               # MLflow tracking for embedding model experimentation
 ├── src/                  

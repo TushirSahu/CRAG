@@ -2,14 +2,14 @@ from setuptools import find_packages, setup
 
 setup(
     name="crag_agent",
-    version="0.1.0",
+    version="0.2.0",
     author="Tushir Sahu",
-    description="Enterprise Agentic CRAG (Corrective RAG) System with MLOps Pipeline",
+    description="Agentic Knowledge Engine (trust-aware, temporal RAG) with MLOps Pipeline",
     packages=find_packages(),
     install_requires=[
         "langchain",
         "langchain-huggingface",
-        "langchain-chroma",
+        "lancedb",
         "langchain-google-genai",
         "fastapi",
         "uvicorn",

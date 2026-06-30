@@ -14,6 +14,7 @@ from functools import lru_cache
 from typing import List, Protocol, runtime_checkable
 
 from src.core.config import get_settings
+from src.utils.logger import logger
 
 
 @runtime_checkable
@@ -32,7 +33,7 @@ def get_embeddings() -> Embedder:
     cfg = get_settings().embeddings
     finetuned = get_settings().resolve(cfg.finetuned_path)
     if os.path.exists(finetuned):
-        print("🧠 Loading fine-tuned domain embeddings...")
+        logger.info("🧠 Loading fine-tuned domain embeddings...")
         return HuggingFaceEmbeddings(model_name=finetuned)
-    print(f"ℹ️  Using base embedding model: {cfg.base_model}")
+    logger.info("ℹ️  Using base embedding model: %s", cfg.base_model)
     return HuggingFaceEmbeddings(model_name=cfg.base_model)

@@ -45,6 +45,17 @@ GENERATE = ChatPromptTemplate.from_template(
     "Question: {question}"
 )
 
+TEXT_TO_SQL = ChatPromptTemplate.from_template(
+    "You are a careful analytics engineer. Given a SQLite schema and a question, "
+    "write ONE read-only SQL query that answers it.\n"
+    "Rules: a single SELECT statement only; no INSERT/UPDATE/DELETE/DDL; no semicolons "
+    "beyond the one terminating the statement; use only the tables and columns shown.\n"
+    "Today's date is {today} (use it for relative dates like 'yesterday').\n\n"
+    "Schema:\n{schema}\n\n"
+    "Question: {question}\n"
+    "{format_instructions}"
+)
+
 VERIFY_GENERATION = ChatPromptTemplate.from_template(
     "You are a strict fact-checker. For the answer below, break it into its factual "
     "claims and decide, for each, whether it is directly supported by the provided "
