@@ -1,27 +1,60 @@
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+"""LanceDB-backed semantic cache (query → answer) using the shared embedder.
 
-class LocalSemanticCache():
-    def __init__(self, threshold: float = 0.7):
-        self.embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-        self.cache_db = Chroma(collection_name="semantic_cache",persist_directory="./data/cache_db", embedding_function=self.embeddings)
-        self.threshold = threshold
+Same idea as before — return a previous answer when a semantically similar
+question arrives — but on LanceDB and sharing the single app-wide embedding
+model instead of instantiating its own.
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from typing import Optional
+
+import lancedb
+
+from src.core.config import get_settings
+from src.core.embeddings import Embedder, get_embeddings
+
+
+class LocalSemanticCache:
+    def __init__(self, embedder: Optional[Embedder] = None, threshold: Optional[float] = None):
+        cfg = get_settings().cache
+        self.embedder = embedder or get_embeddings()
+        self.threshold = cfg.threshold if threshold is None else threshold  # min cosine similarity
+        self._db = lancedb.connect(get_settings().resolve(cfg.path))
+        self._table = "semantic_cache"
 
     def check_cache(self, query: str):
-        print("--Checking Cache--")
-        results = self.cache_db.similarity_search_with_score(query, k=1)
-        
+        if self._table not in self._db.table_names():
+            return None
+        results = (
+            self._db.open_table(self._table)
+            .search(self.embedder.embed_query(query))
+            .metric("cosine")
+            .limit(1)
+            .to_list()
+        )
         if results:
-            doc,score = results[0]
-            if score < self.threshold:
-                print(f"Cache hit with similarity score: {score:.2f}")
-                return doc.metadata["answer"]
-
-        
-        print("Cache miss")
+            similarity = 1.0 - float(results[0].get("_distance", 1.0))
+            if similarity >= self.threshold:
+                print(f"⚡ Cache hit (similarity {similarity:.2f})")
+                return results[0]["answer"]
         return None
 
-    def add_to_cache(self, query: str, answer: str):
-        print("--Adding to Cache--")
-        self.cache_db.add_texts(texts=[query], metadatas=[{"answer": answer}])
-        print("Added to cache successfully")
+    def clear(self) -> None:
+        if self._table in self._db.table_names():
+            self._db.drop_table(self._table)
+
+    def add_to_cache(self, query: str, answer: str) -> None:
+        row = {
+            "id": str(uuid.uuid4()),
+            "query": query,
+            "answer": answer,
+            "vector": self.embedder.embed_query(query),
+            "created_at": time.time(),
+        }
+        if self._table in self._db.table_names():
+            self._db.open_table(self._table).add([row])
+        else:
+            self._db.create_table(self._table, data=[row])

@@ -25,7 +25,9 @@ from ragas.metrics import (
 from ragas.run_config import RunConfig
 
 from src.agent.graph import app as crag_app
-from src.agent.graph import embeddings as domain_embeddings
+from src.core.embeddings import get_embeddings
+
+domain_embeddings = get_embeddings()
 
 load_dotenv()
 

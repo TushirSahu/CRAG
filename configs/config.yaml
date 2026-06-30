@@ -1,14 +1,46 @@
-# Global Configuration for CRAG
-vector_db:
-  path: "./data/chroma_db"
-  collection: "knowledge_base"
+# Global configuration for the Agentic Knowledge Engine (formerly CRAG).
+# This file is the single source of truth — code reads it via src.core.config.
+
+vector_store:
+  provider: "lancedb"          # embedded, versioned, native hybrid search
+  path: "./data/lancedb"
+  table: "knowledge_base"
+
+embeddings:
+  base_model: "all-MiniLM-L6-v2"
+  finetuned_path: "./data/finetuned-domain-embeddings"
 
 retriever:
   chunk_size: 500
   chunk_overlap: 50
-  k_retrieval: 3
+  k_retrieval: 5               # documents returned to the agent
+  fetch_k: 20                  # candidates pulled before hybrid rerank
+  hybrid: true                 # vector + full-text fusion (replaces hand-rolled RRF)
+
+raptor:                         # hierarchical, multi-resolution indexing
+  enabled: true
+  max_levels: 3
+  min_cluster_size: 2
+  reduce_dim: 10               # PCA target dims before clustering (0 = off)
+
+temporal:                       # time-aware knowledge (Pillar A)
+  enabled: true
+  stale_after_days: 180        # evidence older than this is flagged stale
+
+trust:                          # verifiable answers + abstention (Pillar B)
+  enabled: true
+  min_confidence: 0.5
+  abstain_message: "I don't have enough grounded evidence to answer this confidently."
 
 models:
   llm: "gemini-2.5-flash"
   grader_llm: "gemma-3-4b-it"
-  base_embedding: "all-MiniLM-L6-v2"
+  generation_temperature: 0
+
+agent:
+  max_retries: 2
+  grade_rate_limit_seconds: 0  # replaces the hardcoded time.sleep(3) per document
+
+cache:
+  path: "./data/cache_db"
+  threshold: 0.7
