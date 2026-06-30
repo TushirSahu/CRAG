@@ -1,15 +1,27 @@
-# Production-Ready Agentic RAG (Corrective & Routed RAG)
+# Agentic Knowledge Engine (Beyond Corrective RAG)
 
 ![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agentic-orange)
+![LanceDB](https://img.shields.io/badge/VectorDB-LanceDB-ff69b4)
+![RAPTOR](https://img.shields.io/badge/Indexing-RAPTOR%20Hierarchical-teal)
 ![MLOps](https://img.shields.io/badge/MLOps-DVC%20%7C%20MLflow-green)
-![DevOps](https://img.shields.io/badge/DevOps-Docker%20%7C%20K8s%20%7C%20Terraform-blueviolet)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-black)
 
 ## 📌 Overview
-This project implements an **Enterprise-Grade Agentic Retrieval-Augmented Generation (RAG)** system. Rather than relying on a naive vector-search approach, the system utilizes a **LangGraph-based control flow** to route queries based on user intent and perform self-correction if the retrieved documents lack relevance. 
+This started as a Corrective + Routed RAG (CRAG) system and goes **beyond it**: instead of a
+flat retrieval pipeline, it is an **Agentic Knowledge Engine** that (1) indexes knowledge at
+**multiple resolutions**, (2) is **time-aware** about when facts were true, and (3) only
+answers what it can **prove** — reporting a trust score and **abstaining** when grounding is
+weak. The control flow is a **LangGraph** state machine; retrieval is **LanceDB hybrid search**.
 
-Designed with extensive **MLOps and DevOps best practices**, the repository features complete infrastructure-as-code (IaC), containerization, CI/CD pipelines, and data version control, making it a scalable blueprint for real-world AI applications.
+### What makes this more than a CRAG
+| Capability | What it does | Where |
+|---|---|---|
+| 🌲 **RAPTOR hierarchical indexing** | Recursively clusters + summarizes chunks into a tree; retrieves at multiple resolutions (leaf detail ↔ summary overview) | `src/index/raptor.py` |
+| 🗄️ **LanceDB vector store** | Embedded, versioned store with **native hybrid** (vector + full-text) search — replaces Chroma + hand-rolled BM25/RRF | `src/index/vectorstore.py` |
+| ⏳ **Temporal knowledge (Pillar A)** | Point-in-time (`as_of`) queries, "what changed" reasoning, automatic **staleness flags** on evidence | `vectorstore.py`, `nodes.py` |
+| 🔎 **Verifiable trust layer (Pillar B)** | Claim-level grounding check → **confidence score** and **abstention** instead of confident hallucination | `src/agent/trust.py` |
+| 🧱 **Config-driven, modular code** | `configs/config.yaml` is the single source of truth; the 417-line monolith is split into small typed modules | `src/core/`, `src/agent/` |
 
 ---
 
@@ -30,27 +42,46 @@ This project solves these issues by introducing an **Intent Router** and a **Cor
 ```mermaid
 graph TD
     User([User Query]) --> Router{Intent Router Node}
-    
-    Router -->|Document / Policy| Retriever[Hybrid Retrieval: ChromaDB + Graph]
+
+    Router -->|Document / Policy| Retriever[LanceDB Hybrid + RAPTOR + Temporal]
     Router -->|Analytics / Count| SQL[SQL Database Agent]
     Router -->|Live Information| Web[Web Search API]
-    
+
     Retriever --> Grader{Grade Documents}
-    Grader -->|Relevant Document Found| Generator[LLM Generator]
-    Grader -->|Irrelevant Document| Rewriter[Rewrite Query]
-    
+    Grader -->|Relevant| Generator[LLM Generator]
+    Grader -->|Irrelevant| Rewriter[Rewrite Query]
+
     Rewriter --> Web
     Web --> Generator
     SQL --> Generator
-    
-    Generator --> Output([Final Answer])
+
+    Generator --> Verify{Trust Layer: claim-level grounding}
+    Verify -->|confidence ≥ threshold| Output([Answer + Trust Score])
+    Verify -->|low, retries left| Rewriter
+    Verify -->|low, no retries| Abstain([I don't have enough grounded evidence])
 ```
 
-### 1. **`src/agent/graph.py` (The Brain)**
-Defines the `StateGraph`. The agent maintains conversation state and loops through:
-- **Routing**: Vector vs. Web vs. SQL.
-- **Retrieval**: Uses a custom hybrid retriever (BM25 + Semantic Search).
-- **Grading & Correction**: Validates document relevance and grounds the generation to prevent hallucinations.
+### Code map
+- **`src/agent/graph.py`** — graph wiring only (~80 lines); node logic lives in `src/agent/nodes.py`.
+- **`src/core/config.py`** — typed settings loaded once from `configs/config.yaml` (no hardcoded `k`/paths).
+- **`src/core/embeddings.py`** — one shared embedder for retriever + cache.
+- **`src/index/vectorstore.py`** — LanceDB hybrid store with temporal `as_of` + source-ACL filters.
+- **`src/index/raptor.py`** — RAPTOR tree builder (GMM clustering + LLM summaries).
+- **`src/agent/trust.py`** — verifiable trust layer (claim grounding → confidence → abstention).
+
+### Build the index
+```bash
+python scripts/build_index.py path/to/doc.pdf [more.pdf ...]
+```
+Extracts (LlamaParse → PyPDF fallback), cleans/splits, builds a RAPTOR tree, and writes every
+node (leaves + summaries) into LanceDB. The Streamlit uploader does the same via `src/index/builder.py`.
+
+### Tests that run without API keys
+```bash
+PYTHONPATH=. python tests/test_vectorstore.py   # hybrid search, temporal, ACL, staleness
+PYTHONPATH=. python tests/test_raptor.py        # hierarchical tree building
+PYTHONPATH=. python tests/test_api.py           # API handler smoke test
+```
 
 ---
 

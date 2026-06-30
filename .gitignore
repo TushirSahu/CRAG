@@ -9,6 +9,7 @@ __pycache__/
 # Databases (Updated to new structure)
 data/cache_db/
 data/chroma_db/
+data/lancedb/
 data/finetuned-domain-embeddings/
 
 # Data files and evaluation results

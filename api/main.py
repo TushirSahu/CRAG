@@ -16,11 +16,14 @@ except ImportError:  # pragma: no cover - keeps the module importable in lightwe
             self.args = args
             self.kwargs = kwargs
 
-        def post(self, *args, **kwargs):
+        def _route(self, *args, **kwargs):
             def decorator(func):
                 return func
 
             return decorator
+
+        post = _route
+        get = _route
 
     FastAPI = _FallbackFastAPI
 
@@ -28,32 +31,27 @@ except ImportError:  # pragma: no cover - keeps the module importable in lightwe
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-def get_crag_app():
-    from src.agent.graph import app as crag_app
-
-    return crag_app
-
-app = FastAPI(title="CRAG Agent API", description="🚀 Corrective RAG Backend API", version="1.0")
+app = FastAPI(title="Agentic Knowledge Engine API", description="🧠 Trust-aware agentic RAG", version="2.0")
 
 class QueryRequest(BaseModel):
     question: str
 
+
+def _agent_run(question: str, **kwargs):
+    """Indirection so the heavy LangGraph import stays lazy (and patchable in tests)."""
+    from src.agent.graph import run
+
+    return run(question, **kwargs)
+
 @app.post("/chat")
 def chat_with_agent(request: QueryRequest):
-    """
-    Exposes the LangGraph Agent as a REST API endpoint.
-    """
-    inputs = {"question": request.question, "retry_count": 0, "chat_history": []}
-    final_generation = ""
-
-    crag_app = get_crag_app()
-    
-    for output in crag_app.stream(inputs):
-        for key, value in output.items():
-            if key == "generate":
-                final_generation = value["generation"]
-                
-    return {"response": final_generation}
+    """Run the agent for one question and return the answer with its trust score."""
+    result = _agent_run(request.question, retry_count=0, chat_history=[])
+    return {
+        "response": result.get("generation", ""),
+        "confidence": result.get("confidence"),
+        "sources": [d.get("metadata", {}).get("source") for d in result.get("documents", [])],
+    }
 
 
 @app.get("/")

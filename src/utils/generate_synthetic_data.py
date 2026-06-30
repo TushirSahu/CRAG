@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+
+from src.agent.nodes import get_store
 
 load_dotenv()
 
@@ -33,16 +33,12 @@ def generate_dataset():
     )
     chain = prompt | llm | parser
 
-    # 2. Get chunks from your local ChromaDB
-    print("📚 Loading existing chunks from ChromaDB...")
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vector_db = Chroma(persist_directory="./data/chroma_db", embedding_function=embeddings)
-    
-    db_data = vector_db.get() 
-    chunks = db_data.get('documents', [])
-    
+    # 2. Get chunks from the LanceDB knowledge store
+    print("📚 Loading existing chunks from the knowledge store...")
+    chunks = get_store().texts(leaves_only=True)
+
     if not chunks:
-        print("⚠️ No documents found in ChromaDB! Please upload a PDF in the Streamlit app first.")
+        print("⚠️ No documents found! Please ingest a PDF (scripts/build_index.py or the app) first.")
         return
 
     print(f"✅ Found total {len(chunks)} chunks in database. Generating questions for the first 15 for demonstration...")
