@@ -82,10 +82,20 @@ Extracts (LlamaParse → PyPDF fallback), cleans/splits, builds a RAPTOR tree, a
 node (leaves + summaries) into LanceDB. The Streamlit uploader does the same via `src/index/builder.py`.
 
 ### Tests that run without API keys
+Run each file directly (the deterministic fakes need no keys):
 ```bash
 PYTHONPATH=. python tests/test_vectorstore.py   # hybrid search, temporal, ACL, staleness
 PYTHONPATH=. python tests/test_raptor.py        # hierarchical tree building
+PYTHONPATH=. python tests/test_sql_tool.py      # text-to-SQL safety guard + real execution
+PYTHONPATH=. python tests/test_trust.py         # fail-safe trust layer + post-verify routing
+PYTHONPATH=. python tests/test_cache.py         # semantic cache hit/miss + invalidation
+PYTHONPATH=. python tests/test_metrics.py       # drift-monitoring PSI
 PYTHONPATH=. python tests/test_api.py           # API handler smoke test
+```
+
+### Seed the analytics database (for the SQL agent)
+```bash
+PYTHONPATH=. python scripts/seed_analytics_db.py   # writes data/analytics.db
 ```
 
 ---
