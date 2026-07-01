@@ -19,10 +19,10 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
-import lancedb
-
+from src.core import lancedb as ldb
 from src.core.config import Settings, get_settings
 from src.core.embeddings import Embedder
+from src.utils.logger import logger
 
 # Columns promoted to first-class fields; everything else rides in ``meta_json``.
 _RESERVED = {"source", "page", "level", "node_type", "valid_from", "ingested_at"}
@@ -46,7 +46,7 @@ class KnowledgeStore:
         self.settings = settings or get_settings()
         self.embedder = embedder
         cfg = self.settings.vector_store
-        self._db = lancedb.connect(self.settings.resolve(cfg.path))
+        self._db = ldb.connect(cfg.path)
         self._table_name = cfg.table
 
     # -- writes -----------------------------------------------------------
@@ -141,8 +141,10 @@ class KnowledgeStore:
             if where:
                 builder = builder.where(where, prefilter=True)
             rows = builder.limit(rcfg.fetch_k).to_list()
-        except Exception:
-            # Any hybrid/FTS hiccup falls back to plain vector search.
+        except Exception as exc:
+            # Any hybrid/FTS hiccup falls back to plain vector search — but log it
+            # so a persistently broken full-text index doesn't fail silently.
+            logger.warning("Hybrid search failed, falling back to vector-only: %s", exc)
             builder = table.search(qvec)
             if where:
                 builder = builder.where(where, prefilter=True)

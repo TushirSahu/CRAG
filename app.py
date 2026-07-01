@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from src.agent.graph import app as crag_app
-from src.agent.nodes import get_store
-from src.agent.semantic_cache import LocalSemanticCache
+from src.agent.nodes import get_cache, get_store
 from src.data.ingestion import extract_documents_from_pdf
 from src.index.builder import index_documents
 
@@ -57,11 +56,14 @@ with st.sidebar:
 
     st.divider()
     if st.button("Clear Semantic Cache"):
-        st.session_state.semantic_cache.clear()
+        get_cache().clear()
+        get_cache.cache_clear()
         st.success("Cache wiped!")
     if st.button("Clear Knowledge Base"):
         get_store.cache_clear()
         get_store().reset()
+        get_cache().clear()  # stale answers must not outlive the documents they cited
+        get_cache.cache_clear()
         st.success("Knowledge base wiped! The agent has forgotten all documents.")
 
 # --- Chat ----------------------------------------------------------------
@@ -72,8 +74,6 @@ st.markdown(
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "semantic_cache" not in st.session_state:
-    st.session_state.semantic_cache = LocalSemanticCache()
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -85,53 +85,59 @@ if prompt := st.chat_input("Ask a question about your documents (or anything els
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("assistant"):
-        cached = st.session_state.semantic_cache.check_cache(prompt)
+        with st.status("Agent is thinking...", expanded=True) as status:
+            inputs = {"question": prompt, "retry_count": 0, "chat_history": st.session_state.messages}
+            final_generation, final_documents, confidence = "", [], None
+            cached, verified = False, True
+            labels = {
+                "cache_lookup": "⚡ Checking semantic cache...",
+                "retrieve": "📚 Retrieving (multi-resolution)...",
+                "grade_documents": "⚖️ Grading evidence...",
+                "web_search": "🌐 Searching the web...",
+                "sql_tool": "🗄️ Querying analytics database...",
+                "generate": "✍️ Synthesizing answer...",
+                "verify": "🔎 Verifying grounding...",
+                "cache_write": "💾 Caching trusted answer...",
+                "abstain": "🤖 Abstaining (insufficient evidence)...",
+                "unverified": "⚠️ Answer could not be verified...",
+            }
+            for output in crag_app.stream(inputs):
+                for key, value in output.items():
+                    if key in labels:
+                        st.write(labels[key])
+                    if key == "rewrite_query":
+                        st.write(f"🔄 Rewriting query to: '{value['question']}'")
+                    if value.get("cached"):
+                        cached = True
+                    if "generation" in value:
+                        final_generation = value["generation"]
+                    if value.get("documents"):
+                        final_documents = value["documents"]
+                    if value.get("confidence") is not None:
+                        confidence = value["confidence"]
+                    if value.get("verified") is not None:
+                        verified = value["verified"]
+            status.update(label="Process Complete!", state="complete", expanded=False)
+
+        st.markdown(final_generation)
         if cached:
-            st.success("⚡ Answer retrieved from Semantic Cache")
-            st.markdown(cached)
-            st.session_state.messages.append({"role": "assistant", "content": cached})
-        else:
-            with st.status("Agent is thinking...", expanded=True) as status:
-                inputs = {"question": prompt, "retry_count": 0, "chat_history": st.session_state.messages}
-                final_generation, final_documents, confidence = "", [], None
-                labels = {
-                    "retrieve": "📚 Retrieving (multi-resolution)...",
-                    "grade_documents": "⚖️ Grading evidence...",
-                    "web_search": "🌐 Searching the web...",
-                    "generate": "✍️ Synthesizing answer...",
-                    "verify": "🔎 Verifying grounding...",
-                    "abstain": "🤖 Abstaining (insufficient evidence)...",
-                }
-                for output in crag_app.stream(inputs):
-                    for key, value in output.items():
-                        if key in labels:
-                            st.write(labels[key])
-                        if key == "rewrite_query":
-                            st.write(f"🔄 Rewriting query to: '{value['question']}'")
-                        if "generation" in value:
-                            final_generation = value["generation"]
-                        if value.get("documents"):
-                            final_documents = value["documents"]
-                        if value.get("confidence") is not None:
-                            confidence = value["confidence"]
-                status.update(label="Process Complete!", state="complete", expanded=False)
+            st.success("⚡ Answer retrieved from the semantic cache.")
+        elif not verified:
+            st.warning("Could not verify this answer against the sources — treat with caution.")
+        elif confidence is not None:
+            pct = int(confidence * 100)
+            (st.success if pct >= 70 else st.warning if pct >= 50 else st.error)(
+                f"Trust score: {pct}% of claims grounded in retrieved evidence."
+            )
 
-            st.markdown(final_generation)
-            if confidence is not None:
-                pct = int(confidence * 100)
-                (st.success if pct >= 70 else st.warning if pct >= 50 else st.error)(
-                    f"Trust score: {pct}% of claims grounded in retrieved evidence."
-                )
+        if final_documents:
+            with st.expander("Show Sources"):
+                for i, doc in enumerate(final_documents, start=1):
+                    meta = doc.get("metadata", {})
+                    stale = " ⏳ stale" if meta.get("stale") else ""
+                    level = meta.get("level", 0)
+                    kind = "summary" if meta.get("node_type") == "summary" else "leaf"
+                    st.markdown(f"**[Source {i}] {meta.get('source', 'Unknown')}** · {kind} L{level}{stale}")
+                    st.caption(f"{doc.get('content', '')[:300]}...")
 
-            if final_documents:
-                with st.expander("Show Sources"):
-                    for i, doc in enumerate(final_documents, start=1):
-                        meta = doc.get("metadata", {})
-                        stale = " ⏳ stale" if meta.get("stale") else ""
-                        level = meta.get("level", 0)
-                        kind = "summary" if meta.get("node_type") == "summary" else "leaf"
-                        st.markdown(f"**[Source {i}] {meta.get('source', 'Unknown')}** · {kind} L{level}{stale}")
-                        st.caption(f"{doc.get('content', '')[:300]}...")
-
-            st.session_state.semantic_cache.add_to_cache(prompt, final_generation)
-            st.session_state.messages.append({"role": "assistant", "content": final_generation})
+        st.session_state.messages.append({"role": "assistant", "content": final_generation})

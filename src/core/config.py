@@ -52,6 +52,7 @@ class TrustCfg(BaseModel):
     enabled: bool = True
     min_confidence: float = 0.5
     abstain_message: str = "I don't have enough grounded evidence to answer this confidently."
+    unverified_prefix: str = "⚠️ I couldn't automatically verify this answer against the sources:\n\n"
 
 
 class ModelsCfg(BaseModel):
@@ -70,6 +71,11 @@ class CacheCfg(BaseModel):
     threshold: float = 0.7
 
 
+class SQLCfg(BaseModel):
+    db_path: str = "./data/analytics.db"
+    max_rows: int = 50
+
+
 class Settings(BaseModel):
     vector_store: VectorStoreCfg = VectorStoreCfg()
     embeddings: EmbeddingsCfg = EmbeddingsCfg()
@@ -80,6 +86,7 @@ class Settings(BaseModel):
     models: ModelsCfg = ModelsCfg()
     agent: AgentCfg = AgentCfg()
     cache: CacheCfg = CacheCfg()
+    sql: SQLCfg = SQLCfg()
 
     def resolve(self, path: str) -> str:
         """Turn a config-relative path into an absolute one anchored at the repo root."""

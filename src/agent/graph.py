@@ -3,11 +3,12 @@
 The node logic lives in :mod:`src.agent.nodes`; this file just assembles the
 LangGraph state machine:
 
-    route ─┬─ retrieve → grade ─┬─ web_search ─┬─ rewrite → web_search
-           │                    └─ generate    └─ generate
-           ├─ web_search → (rewrite loop) → generate
-           └─ sql_tool → generate
-    generate → verify → useful | retry→rewrite | abstain
+    cache_lookup ─ hit → END
+                 └ miss → route ─┬─ retrieve → grade ─┬─ web_search ─┬─ rewrite → web_search
+                                 │                     └─ generate    └─ generate
+                                 ├─ web_search → (rewrite loop) → generate
+                                 └─ sql_tool → generate
+    generate → verify → cache_write→END | retry→rewrite | abstain | unverified
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ load_dotenv()
 
 def build_app():
     g = StateGraph(GraphState)
+    g.add_node("cache_lookup", nodes.cache_lookup)
+    g.add_node("cache_write", nodes.cache_write)
     g.add_node("retrieve", nodes.retrieve)
     g.add_node("grade_documents", nodes.grade_documents)
     g.add_node("web_search", nodes.web_search)
@@ -30,11 +33,13 @@ def build_app():
     g.add_node("generate", nodes.generate)
     g.add_node("verify", nodes.verify)
     g.add_node("abstain", nodes.abstain)
+    g.add_node("unverified", nodes.unverified)
     g.add_node("rewrite_query", nodes.rewrite_query)
 
-    g.set_conditional_entry_point(
-        nodes.route_query_intent,
-        {"web_search": "web_search", "sql_tool": "sql_tool", "retrieve": "retrieve"},
+    g.set_entry_point("cache_lookup")
+    g.add_conditional_edges(
+        "cache_lookup", nodes.decide_after_cache,
+        {"cached": END, "web_search": "web_search", "sql_tool": "sql_tool", "retrieve": "retrieve"},
     )
     g.add_edge("sql_tool", "generate")
     g.add_edge("retrieve", "grade_documents")
@@ -50,9 +55,11 @@ def build_app():
     g.add_edge("generate", "verify")
     g.add_conditional_edges(
         "verify", nodes.decide_after_verify,
-        {"useful": END, "retry": "rewrite_query", "abstain": "abstain"},
+        {"useful": "cache_write", "retry": "rewrite_query", "abstain": "abstain", "unverified": "unverified"},
     )
+    g.add_edge("cache_write", END)
     g.add_edge("abstain", END)
+    g.add_edge("unverified", END)
     return g.compile()
 
 

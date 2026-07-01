@@ -11,18 +11,23 @@ import time
 import uuid
 from typing import Optional
 
-import lancedb
-
+from src.core import lancedb as ldb
 from src.core.config import get_settings
 from src.core.embeddings import Embedder, get_embeddings
+from src.utils.logger import logger
 
 
 class LocalSemanticCache:
-    def __init__(self, embedder: Optional[Embedder] = None, threshold: Optional[float] = None):
+    def __init__(
+        self,
+        embedder: Optional[Embedder] = None,
+        threshold: Optional[float] = None,
+        path: Optional[str] = None,
+    ):
         cfg = get_settings().cache
         self.embedder = embedder or get_embeddings()
         self.threshold = cfg.threshold if threshold is None else threshold  # min cosine similarity
-        self._db = lancedb.connect(get_settings().resolve(cfg.path))
+        self._db = ldb.connect(path or cfg.path)
         self._table = "semantic_cache"
 
     def check_cache(self, query: str):
@@ -38,7 +43,7 @@ class LocalSemanticCache:
         if results:
             similarity = 1.0 - float(results[0].get("_distance", 1.0))
             if similarity >= self.threshold:
-                print(f"⚡ Cache hit (similarity {similarity:.2f})")
+                logger.info("⚡ Cache hit (similarity %.2f)", similarity)
                 return results[0]["answer"]
         return None
 

@@ -20,3 +20,4 @@ data/finetuned-domain-embeddings/
 *.pdf
 checkpoints/
 .github/workflows/
+*.md
